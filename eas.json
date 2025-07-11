@@ -1,0 +1,47 @@
+{
+  "cli": {
+    "version": ">= 7.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "image": "macos-sequoia-15.3-xcode-16.2",
+        "simulator": true
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU"
+      },
+      "ios": {
+        "image": "macos-sequoia-15.3-xcode-16.2"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU"
+      },
+      "autoIncrement": true,
+      "ios": {
+        "image": "macos-sequoia-15.3-xcode-16.2"
+      }
+    }
+  },
+  "submit": { 
+      "production": {
+        "ios": {
+         "ascAppId": "6746699434"
+      }
+    }
+  }
+}
