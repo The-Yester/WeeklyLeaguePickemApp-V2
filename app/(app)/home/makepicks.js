@@ -13,14 +13,14 @@ import {
   Button,
   Image
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { collection, doc, setDoc, getDoc, getDocs } from 'firebase/firestore'; // Import Firestore functions
 import { useAuth } from '../../../context/AuthContext'; // Import useAuth to get user
-import { db } from '../../firebaseConfig'; // Import db instance
+import { db } from '../../../firebaseConfig'; // Import db instance
 import * as Linking from 'expo-linking'; // ADDED: Import Linking for opening URLs
 import { useUnsavedChanges } from '../../../context/UnsavedChangesContext';
+import { fetchYahooMatchupsForWeek } from '../../../yahooApi'; 
 
 // --- Configuration ---
 const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;
@@ -136,6 +136,7 @@ const MakePicksScreen = ({ route }) => {
   const [pickDistribution, setPickDistribution] = useState({});
 
   const arePicksDirty = havePicksChanged(savedPicks, currentPicks);
+  const [leagueKey, setLeagueKey] = useState('66645');
 
   useEffect(() => {
     setHasUnsavedChanges(arePicksDirty);
@@ -236,35 +237,34 @@ const MakePicksScreen = ({ route }) => {
   }, []);
 
   const loadDataForWeek = useCallback(async (week) => {
-    if (!loggedInUser) { setIsLoading(false); return; }
+    if (!loggedInUser) {
+      setIsLoading(false);
+      return;
+    }
     
     setIsLoading(true);
     setError(null);
     checkLockStatus(week);
     try {
-        let matchups = allMatchups.length > 0 ? allMatchups : await fetchMatchupsFromSheet();
-        if (allMatchups.length === 0) setAllMatchups(matchups);
-        
-        const filtered = matchups.filter(m => m && m.Week === week);
-        setCurrentWeekMatchups(filtered);
+        // Fetch matchups directly from Yahoo API
+        const matchups = await fetchYahooMatchupsForWeek(leagueKey, week);
+        setCurrentWeekMatchups(matchups);
 
+        // Fetch this user's picks from Firestore (this part doesn't change)
         const weekPicksDocRef = doc(db, "users", loggedInUser.uid, "picks", `week_${week}`);
         const weekPicksDoc = await getDoc(weekPicksDocRef);
         const picksData = weekPicksDoc.exists() ? weekPicksDoc.data() : {};
         setCurrentPicks(picksData);
         setSavedPicks(picksData);
 
-        const distributionData = await calculatePickDistribution(week, matchups);
-        setPickDistribution(distributionData);
     } catch(e) {
         console.error("MakePicksScreen: Failed to load data:", e);
         setError("Could not load matchups or your picks.");
     } finally {
         setIsLoading(false);
     }
-  }, [allMatchups, loggedInUser, fetchMatchupsFromSheet, calculatePickDistribution]);
+  }, [loggedInUser, leagueKey]);
 
-  // Main data loading effect
   useFocusEffect(
     useCallback(() => {
       if (loggedInUser !== undefined) {

@@ -17,7 +17,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { db } from '../firebaseConfig'; // Adjust path if needed
+import { db } from '../../firebaseConfig'; // Adjust path if needed
 
 // --- Configuration ---
 const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;

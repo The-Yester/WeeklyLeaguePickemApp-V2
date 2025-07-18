@@ -19,7 +19,7 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
-import { db } from '../firebaseConfig'; // Adjust path if needed
+import { db } from '../../firebaseConfig'; // Adjust path if needed
 
 // --- Configuration ---
 const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;

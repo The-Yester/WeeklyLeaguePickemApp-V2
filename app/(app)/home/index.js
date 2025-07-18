@@ -18,7 +18,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link, useFocusEffect } from 'expo-router';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../../context/AuthContext';
-import { db } from '../../firebaseConfig'; // Adjust this path if needed
+import { db } from '../../../firebaseConfig'; // Adjust this path if needed
 
 const ArrowRightIcon = () => <Text style={{color: 'white', fontSize: 16}}>GAME ON! ➤</Text>;
 

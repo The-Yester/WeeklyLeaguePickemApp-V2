@@ -1,24 +1,27 @@
 // app/(auth)/login.js
-import { makeRedirectUri, useAuthRequest } from 'expo-auth-session';
-import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import { getAuth, signInWithCustomToken } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  StatusBar,
-  StyleSheet,
+  View,
   Text,
   TouchableOpacity,
-  View
+  StyleSheet,
+  Image,
+  Alert,
+  Platform,
+  StatusBar,
+  ActivityIndicator
 } from 'react-native';
+import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { useAuthRequest, makeRedirectUri } from 'expo-auth-session';
+import { getAuth, signInWithCustomToken } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import Ionicons from 'react-native-vector-icons/Ionicons'; // ADDED: Import Ionicons
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Import AsyncStorage
 
 import { useAuth } from '../../context/AuthContext';
 import { yahooCredentials } from '../../yahooConfig';
-import { app } from '../firebaseConfig'; // Import the initialized app
+import { app } from '../../firebaseConfig'; // Import the initialized app
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -38,7 +41,8 @@ const COLORS = {
   placeholderText: '#757575',
   errorRed: '#D32F2F',
   buttonText: '#FFFFFF',
-  disabledButton: '#9E9E9E'
+  disabledButton: '#9E9E9E',
+  yahooPurple: '#500095',
 };
 
 const LoginScreen = () => {
@@ -47,16 +51,14 @@ const LoginScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const redirectUri = makeRedirectUri({
-    scheme: 'weeklyleaguepickemapp',
-    path: 'login'
+    scheme: 'weeklyleaguepickemapp', // This MUST match the scheme in your app.json
   });
 
   const [request, response, promptAsync] = useAuthRequest(
     {
       clientId: yahooCredentials.clientId,
       scopes: ['fspt-r', 'profile'],
-      clientSecret: yahooCredentials.clientSecret,
-      redirectUri,
+      redirectUri: yahooCredentials.redirectUri, 
       responseType: 'code',
     },
     discovery
@@ -79,6 +81,10 @@ const LoginScreen = () => {
 
             const { token, profile } = result.data;
 
+            await AsyncStorage.setItem('yahooAccessToken', accessToken);
+            await AsyncStorage.setItem('yahooRefreshToken', refreshToken);
+            console.log("Yahoo tokens saved securely.");
+
             // Use the custom token to sign into Firebase Auth
             const auth = getAuth(app);
             await signInWithCustomToken(auth, token);
@@ -94,7 +100,9 @@ const LoginScreen = () => {
 
         } else if (response.type === 'error') {
           console.error("Yahoo login error:", response.error);
-          Alert.alert("Yahoo Login Failed", "Could not connect to your Yahoo account. Please try again.");
+          if (response.type !== 'dismiss') {
+            Alert.alert("Yahoo Login Failed", "Could not connect to your Yahoo account. Please try again.");
+          }
         }
         setIsLoading(false);
       }
@@ -112,6 +120,7 @@ const LoginScreen = () => {
           style={styles.logo}
           resizeMode="contain"
         />
+        <Text style={styles.title}>Welcome To</Text>
         <Text style={styles.title}>The League: Weekly Pick'em</Text>
         <Text style={styles.subtitle}>Log in with your Yahoo Fantasy account to get started.</Text>
 
@@ -140,7 +149,7 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: PRIMARY_COLOR,
+    backgroundColor: '#1f366a',
     justifyContent: 'center',
   },
   content: {
@@ -148,19 +157,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
   },
   logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 20,
+    width: 350,
+    height: 350,
+    marginBottom: 5,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.textWhite,
     textAlign: 'center',
     marginBottom: 10,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 12,
     color: '#E0E0E0',
     textAlign: 'center',
     marginBottom: 40,

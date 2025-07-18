@@ -21,7 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Link, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
 import { doc, getDoc, updateDoc, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import { db } from '../../../firebaseConfig';
 import * as Linking from 'expo-linking'; // Ensure Linking is imported
 
 // Colors and Constants
