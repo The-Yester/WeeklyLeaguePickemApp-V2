@@ -20,7 +20,7 @@ import { useAuth } from '../../../context/AuthContext'; // Adjust path if your c
 import * as Notifications from 'expo-notifications'; // Import expo-notifications
 import { getAuth, deleteUser } from "firebase/auth";
 import { doc, deleteDoc, collection, getDocs } from "firebase/firestore";
-import { db } from '../../../firebaseConfig'; // Adjust path if needed
+import { db } from '../../../config/firebaseConfig'; // Adjust path if needed
 
 // Colors
 const PRIMARY_COLOR = '#1f366a';

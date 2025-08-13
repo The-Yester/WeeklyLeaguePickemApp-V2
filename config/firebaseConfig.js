@@ -19,28 +19,23 @@ const firebaseConfig = {
 // Initialize Firebase
 let app;
 let auth;
-const apps = getApps();
 
-if (!apps.length) {
+if (!getApps().length) {
   try {
-    // Initialize the primary app
     app = initializeApp(firebaseConfig);
-    // Initialize auth with persistence for React Native
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage)
     });
-    console.log("Firebase initialized for the first time with auth persistence.");
+    console.log("✅ Firebase initialized for the first time with auth persistence.");
   } catch (error) {
-    console.error("Firebase initialization error:", error);
-    // Fallback for environments where persistence might fail, though unlikely in native
-    app = initializeApp(firebaseConfig);
+    console.error("🔥 Firebase initialization error:", error);
+    app = initializeApp(firebaseConfig); // fallback init
     auth = getAuth(app);
   }
 } else {
-  // Use the existing app instance
   app = getApp();
   auth = getAuth(app);
-  console.log("Existing Firebase app instance used.");
+  console.log("🔁 Using existing Firebase app instance.");
 }
 
 const db = getFirestore(app);

@@ -1,25 +1,25 @@
 // functions/index.js
-const functions = require("firebase-functions");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const fetch = require("cross-fetch");
-const { yahooCredentials } = require("../yahooConfig"); // Import credentials
+const { yahooCredentials } = require("./config/yahooConfig");
 
 admin.initializeApp();
 
-// UPDATED: Import HttpsError from the v2 module as well
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
-
 exports.exchangeYahooCodeForToken = onCall(async (request) => {
   const code = request.data.code;
-  if (!code) {
-    // UPDATED: Use the imported HttpsError
+  // Get the redirectUri sent from the app
+  const redirectUri = request.data.redirectUri; 
+
+  if (!code || !redirectUri) {
     throw new HttpsError(
       "invalid-argument",
-      "The function must be called with a 'code' argument."
+      "The function must be called with 'code' and 'redirectUri' arguments."
     );
   }
 
   console.log("Received authorization code:", code);
+  console.log("Using redirect URI for token exchange:", redirectUri);
 
   const tokenUrl = "https://api.login.yahoo.com/oauth2/get_token";
   const credentials = Buffer.from(
@@ -28,7 +28,7 @@ exports.exchangeYahooCodeForToken = onCall(async (request) => {
 
   const body = new URLSearchParams();
   body.append("code", code);
-  body.append("redirect_uri", yahooCredentials.redirectUri);
+  body.append("redirect_uri", redirectUri); // Use the URI from the app
   body.append("grant_type", "authorization_code");
 
   try {
@@ -47,49 +47,46 @@ exports.exchangeYahooCodeForToken = onCall(async (request) => {
       throw new Error(tokenData.error_description || "Failed to get token from Yahoo.");
     }
 
-    const accessToken = tokenData.access_token;
-    const yahooGuid = tokenData.xoauth_yahoo_guid;
+    const { access_token, refresh_token, xoauth_yahoo_guid } = tokenData;
     console.log("Successfully exchanged code for access token.");
 
-    const profileUrl = `https://social.yahooapis.com/v1/user/${yahooGuid}/profile?format=json`;
+    const profileUrl = `https://social.yahooapis.com/v1/user/${xoauth_yahoo_guid}/profile?format=json`;
     const profileResponse = await fetch(profileUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${access_token}` },
     });
     const profileData = await profileResponse.json();
     if (!profileResponse.ok) {
-        console.error("Failed to fetch Yahoo profile:", profileData);
-        throw new Error("Could not fetch user profile from Yahoo.");
+      console.error("Failed to fetch Yahoo profile:", profileData);
+      throw new Error("Could not fetch user profile from Yahoo.");
     }
     
     const userProfile = profileData.profile;
-    console.log("Successfully fetched user profile:", userProfile.nickname);
+    const firebaseToken = await admin.auth().createCustomToken(xoauth_yahoo_guid);
 
-    const firebaseToken = await admin.auth().createCustomToken(yahooGuid);
-    console.log("Created custom Firebase token.");
-
-    const userDocRef = admin.firestore().collection("users").doc(yahooGuid);
+    const userDocRef = admin.firestore().collection("users").doc(xoauth_yahoo_guid);
     await userDocRef.set({
-        uid: yahooGuid,
+        uid: xoauth_yahoo_guid,
         name: userProfile.nickname,
         username: userProfile.nickname,
-        email: userProfile.emails.find(e => e.primary)?.handle,
-        avatarUri: userProfile.image.imageUrl,
+        email: userProfile.emails?.find(e => e.primary)?.handle || '',
+        avatarUri: userProfile.image?.imageUrl || '',
     }, { merge: true });
 
     return { 
         token: firebaseToken,
         profile: {
-            uid: yahooGuid,
+            uid: xoauth_yahoo_guid,
             name: userProfile.nickname,
             username: userProfile.nickname,
             email: userProfile.emails.find(e => e.primary)?.handle,
             avatarUri: userProfile.image.imageUrl,
-        }
+        },
+        accessToken: access_token,
+        refreshToken: refresh_token,
     };
 
   } catch (error) {
     console.error("Error in cloud function:", error);
-    // UPDATED: Use the imported HttpsError
     throw new HttpsError("internal", error.message);
   }
 });

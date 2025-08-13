@@ -24,3 +24,5 @@ export const UnsavedChangesProvider = ({ children }) => {
     </UnsavedChangesContext.Provider>
   );
 };
+
+export default { useUnsavedChanges, UnsavedChangesProvider };

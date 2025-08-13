@@ -2,7 +2,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useSegments, SplashScreen } from 'expo-router';
-import { auth, db } from '../firebaseConfig'; 
+import { auth, db } from '../config/firebaseConfig'; 
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -112,3 +112,5 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
+
+export default { useAuth, AuthProvider };

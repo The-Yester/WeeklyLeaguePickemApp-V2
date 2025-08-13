@@ -1,6 +1,6 @@
 // yahooApi.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { yahooCredentials } from './yahooConfig'; // Assumes this file is at the root
+import { yahooCredentials } from './config/yahooConfig';
 
 const YAHOO_API_BASE_URL = 'https://fantasysports.yahooapis.com/fantasy/v2';
 
