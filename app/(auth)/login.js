@@ -1,25 +1,20 @@
-// screens/Login.js
 import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useYahooAuth } from '../../hooks/useYahooAuth';
 
 export default function Login() {
-  const { isLoading, promptAsync, isReady } = useYahooAuth();
+  const { isLoading, promptAsync, isReady, isExpoGo } = useYahooAuth();
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../../assets/Pickem_Logo.png')} // optional branding
-        style={styles.logo}
-      />
-      
+      <Image source={require('../../assets/Pickem_Logo.png')} style={styles.logo} />
       <Text style={styles.title}>Welcome to Weekly League Pick'em</Text>
 
       {isLoading ? (
         <ActivityIndicator size="large" color="#6001d2" />
       ) : (
         <TouchableOpacity
-          onPress={() => promptAsync()}
+          onPress={() => promptAsync({ useProxy: isExpoGo })} // ✅ key change
           disabled={!isReady}
           style={styles.buttonWrapper}
         >

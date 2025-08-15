@@ -1,7 +1,7 @@
 // app/_layout.js
 import React, { useEffect } from 'react'; // useEffect might be needed in AppStack
 import { Stack, SplashScreen } from 'expo-router';
-import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AuthProvider, useAuth } from '../../../src/context/AuthContext';
 import { ActivityIndicator, View, StatusBar, StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 

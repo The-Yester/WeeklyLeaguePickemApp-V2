@@ -8,7 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU"
+        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
+        "YAHOO_CLIENT_ID": "dj0yJmk9QlNGVXFQNmljM1U4JmQ9WVdrOVRrcFdSbkIzUlRZbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PThl",
+        "YAHOO_CLIENT_SECRET": "55fa9e1120d158e79bfa2c29983bc1d3c7aaaf05"
       },
       "android": {
         "buildType": "apk"
@@ -21,7 +23,9 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU"
+        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
+        "YAHOO_CLIENT_ID": "dj0yJmk9QlNGVXFQNmljM1U4JmQ9WVdrOVRrcFdSbkIzUlRZbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PThl",
+        "YAHOO_CLIENT_SECRET": "55fa9e1120d158e79bfa2c29983bc1d3c7aaaf05"
       },
       "ios": {
         "image": "macos-sequoia-15.3-xcode-16.2"
@@ -29,7 +33,9 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU"
+        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
+        "YAHOO_CLIENT_ID": "dj0yJmk9QlNGVXFQNmljM1U4JmQ9WVdrOVRrcFdSbkIzUlRZbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PThl",
+        "YAHOO_CLIENT_SECRET": "55fa9e1120d158e79bfa2c29983bc1d3c7aaaf05"
       },
       "autoIncrement": true,
       "ios": {

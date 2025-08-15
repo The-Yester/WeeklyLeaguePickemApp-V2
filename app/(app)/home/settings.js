@@ -16,11 +16,11 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link } from 'expo-router';
-import { useAuth } from '../../../context/AuthContext'; // Adjust path if your context file is elsewhere
+import { useAuth } from '../../../src/context/AuthContext'; // Adjust path if your context file is elsewhere
 import * as Notifications from 'expo-notifications'; // Import expo-notifications
 import { getAuth, deleteUser } from "firebase/auth";
 import { doc, deleteDoc, collection, getDocs } from "firebase/firestore";
-import { db } from '../../../config/firebaseConfig'; // Adjust path if needed
+import { db } from '../../../src/config/firebase'; // Adjust path if needed
 
 // Colors
 const PRIMARY_COLOR = '#1f366a';

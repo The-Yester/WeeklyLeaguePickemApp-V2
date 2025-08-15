@@ -19,9 +19,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Link, useFocusEffect } from 'expo-router';
-import { useAuth } from '../../../context/AuthContext';
+import { useAuth } from '../../../src/context/AuthContext';
 import { doc, getDoc, updateDoc, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { app, auth, db } from '../../../config/firebaseConfig';
+import { db } from '../../../src/config/firebase';
 import * as Linking from 'expo-linking'; // Ensure Linking is imported
 
 // Colors and Constants

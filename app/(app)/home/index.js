@@ -17,8 +17,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link, useFocusEffect } from 'expo-router';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
-import { useAuth } from '../../../context/AuthContext';
-import { db } from '../../../config/firebaseConfig'; // Adjust this path if needed
+import { useAuth } from '../../../src/context/AuthContext';
+import { db } from '../../../src/config/firebase'; // Adjust this path if needed
 
 const ArrowRightIcon = () => <Text style={{color: 'white', fontSize: 16}}>GAME ON! ➤</Text>;
 

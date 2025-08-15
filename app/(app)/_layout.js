@@ -5,7 +5,6 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { Alert } from 'react-native';
 import * as Linking from 'expo-linking';
 // Correct the import path if your context folder is at the project root
-import { UnsavedChangesProvider, useUnsavedChanges } from '../../context/UnsavedChangesContext';
 
 const COLORS = {
   primaryBlue: '#1A237E',
@@ -110,8 +109,6 @@ function AppTabsLayout() {
 // The component that is exported wraps the layout with the provider
 export default function AppLayoutWithProvider() {
   return (
-    <UnsavedChangesProvider>
-      <AppTabsLayout />
-    </UnsavedChangesProvider>
+    {children}
   );
 }

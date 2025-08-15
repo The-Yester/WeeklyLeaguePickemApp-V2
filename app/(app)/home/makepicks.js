@@ -16,8 +16,8 @@ import {
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { collection, doc, setDoc, getDoc, getDocs } from 'firebase/firestore'; // Import Firestore functions
-import { useAuth } from '../../../context/AuthContext'; // Import useAuth to get user
-import { db } from '../../../config/firebaseConfig'; // Import db instance
+import { useAuth } from '../../../src/context/AuthContext'; // Import useAuth to get user
+import { db } from '../../../src/config/firebase'; // Import db instance
 import * as Linking from 'expo-linking'; // ADDED: Import Linking for opening URLs
 import { useUnsavedChanges } from '../../../context/UnsavedChangesContext';
 import { fetchYahooMatchupsForWeek } from '../../../yahooApi'; 
