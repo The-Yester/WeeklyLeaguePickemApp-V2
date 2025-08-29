@@ -3,11 +3,6 @@
     "version": ">= 7.0.0",
     "appVersionSource": "remote"
   },
-  "hooks": {
-    "build": {
-      "install": ".eas/hooks/install.sh"
-    }
-  },
   "build": {
     "development": {
       "developmentClient": true,
