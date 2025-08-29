@@ -19,8 +19,6 @@ import { collection, doc, setDoc, getDoc, getDocs } from 'firebase/firestore'; /
 import { useAuth } from '../../../src/context/AuthContext'; // Import useAuth to get user
 import { db } from '../../../src/config/firebase'; // Import db instance
 import * as Linking from 'expo-linking'; // ADDED: Import Linking for opening URLs
-import { useUnsavedChanges } from '../../../context/UnsavedChangesContext';
-import { fetchYahooMatchupsForWeek } from '../../../yahooApi'; 
 
 // --- Configuration ---
 const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;

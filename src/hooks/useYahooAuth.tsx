@@ -1,4 +1,4 @@
-// hooks/useYahooAuth.js
+// hooks/useYahooAuth.tsx
 import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { useAuthRequest, makeRedirectUri } from 'expo-auth-session';
@@ -9,8 +9,8 @@ import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
 
-import { useAuth } from '../../context/AuthContext';
-import { app } from '../config/firebaseConfig';
+import { useAuth } from '@context/AuthContext';
+import { app } from '../config/firebase';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -23,7 +23,7 @@ export function useYahooAuth() {
   const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
-  const isExpoGo = Constants.appOwnership === 'expo'; // true in Expo Go
+  const isExpoGo = Constants.appOwnership === 'expo';
 
   const redirectUri = makeRedirectUri({
     useProxy: isExpoGo,                 // ✅ Expo Go => proxy URL
@@ -38,6 +38,7 @@ export function useYahooAuth() {
       scopes: ['fspt-r', 'fspt-w', 'openid', 'profile', 'email'], // add fspt-r later, after basic login works
       redirectUri,
       responseType: 'code',
+      usePKCE: true,
     },
     discovery
   );
@@ -67,6 +68,10 @@ export function useYahooAuth() {
       }
     } catch (error) {
       console.error('❌ Error during token exchange or sign-in:', error);
+      if (error.response?.data) {
+        console.error('Yahoo token exchange error:', error.response.data);
+      }
+
       Alert.alert('Login Failed', 'There was an error connecting your account. Please try again.');
     } finally {
       setIsLoading(false);

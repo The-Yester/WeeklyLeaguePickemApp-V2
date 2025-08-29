@@ -2,7 +2,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useSegments, SplashScreen } from 'expo-router';
-import { auth, db } from '../config/firebaseConfig'; 
+import { auth, db } from '../config/firebase'; 
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -23,6 +23,7 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const segments = useSegments();
   const router = useRouter();
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   // This is the primary effect for handling authentication state.
   useEffect(() => {
@@ -74,10 +75,10 @@ export function AuthProvider({ children }) {
 
     if (user && inAuthGroup) {
       // User is logged in but on an auth screen (e.g., /login). Redirect to app.
-      router.replace('/(app)/home');
+      router.replace('/appGroup/home');
     } else if (!user && !inAuthGroup) {
       // User is not logged in and not in the auth section. Redirect to login.
-      router.replace('/(auth)/login');
+      router.replace('/authGroup/login');
     }
 
     // Hide splash screen once logic has run
@@ -86,31 +87,51 @@ export function AuthProvider({ children }) {
   }, [user, segments, isLoading, router]);
 
 
-  const signIn = async (userData) => {
+  const signIn = async (userData, token = null) => {
     try {
-      // This function is now mainly for setting state after a successful login.
-      // The onAuthStateChanged listener will also fire, but this provides a faster UI update.
       await AsyncStorage.setItem('currentUser', JSON.stringify(userData));
+      if (token) {
+        await AsyncStorage.setItem('yahoo_access_token', token);
+        setAccessToken(token);
+      }
       setUser(userData);
     } catch (e) {
-      console.error("AuthProvider: Sign in failed to save to AsyncStorage", e);
+      console.error("AuthProvider: Sign in failed", e);
     }
   };
 
   const signOut = async () => {
     try {
-      // This will trigger the onAuthStateChanged listener, which will set user to null.
       await firebaseSignOut(auth);
+      await AsyncStorage.removeItem('yahoo_access_token');
+      setAccessToken(null);
     } catch (e) {
       console.error("AuthProvider: Sign out failed", e);
     }
   };
 
+  const loadYahooToken = async () => {
+    const token = await AsyncStorage.getItem('yahoo_access_token');
+    if (token) {
+      setAccessToken(token);
+    }
+  };
+  useEffect(() => {
+    loadYahooToken();
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, signIn, signOut, isLoadingAuth: isLoading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        accessToken,
+        signIn,
+        signOut,
+        isLoadingAuth: isLoading,
+        setAccessToken,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
-
-export default { useAuth, AuthProvider };

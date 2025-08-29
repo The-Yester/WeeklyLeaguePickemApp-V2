@@ -1,7 +1,7 @@
 // app/_layout.js
 import React, { useEffect } from 'react'; // useEffect might be needed in AppStack
 import { Stack, SplashScreen } from 'expo-router';
-import { AuthProvider, useAuth } from '../../../src/context/AuthContext';
+import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { ActivityIndicator, View, StatusBar, StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -40,8 +40,8 @@ function AppStackLayout() {
   // to define the screens and layout for these groups.
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
-      <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="authGroup" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="appGroup" options={{ gestureEnabled: false }} />
       <Stack.Screen name="+not-found" />
       <Stack.Screen name="index" />
     </Stack>
