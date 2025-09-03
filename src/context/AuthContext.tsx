@@ -1,4 +1,4 @@
-// context/AuthContext.js
+// context/AuthContext.tsx
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useSegments, SplashScreen } from 'expo-router';
@@ -6,9 +6,22 @@ import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
-const AuthContext = createContext(null);
+type AuthProviderProps = {
+  children: React.ReactNode;
+};
 
-export function useAuth() {
+type AuthContextType = {
+  user: any; // You can replace `any` with a proper User type later
+  accessToken: string | null;
+  signIn: (userData: any, token?: string | null) => Promise<void>;
+  signOut: () => Promise<void>;
+  isLoadingAuth: boolean;
+  setAccessToken: React.Dispatch<React.SetStateAction<string | null>>;
+};
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function useAuth(): AuthContextType {
   const value = useContext(AuthContext);
   if (process.env.NODE_ENV !== 'production') {
     if (!value) {
@@ -18,10 +31,10 @@ export function useAuth() {
   return value;
 }
 
-export function AuthProvider({ children }) {
+export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState(undefined); // Use undefined for initial loading state
   const [isLoading, setIsLoading] = useState(true);
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const router = useRouter();
   const [accessToken, setAccessToken] = useState<string | null>(null);
 

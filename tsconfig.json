@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
+    "typeRoots": ["./src/types", "./node_modules/@types"],
     "baseUrl": ".",
     "paths": {
+      "@context/*": ["src/context/*"],
+      "@config/*": ["src/config/*"],
       "@/*": ["src/*"]
     }
   },
@@ -11,6 +14,6 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
-    "src/context/AuthContext.js"
+    "src/context/AuthContext.tsx"
   ]
 }

@@ -32,8 +32,6 @@ exports.exchangeYahooCodeForToken = functions.https.onCall(async (data, context)
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
         redirect_uri,
         code,
         code_verifier,
@@ -51,6 +49,12 @@ exports.exchangeYahooCodeForToken = functions.https.onCall(async (data, context)
     }
 
     const tokenData = await tokenRes.json();
+
+    console.log('Yahoo token exchange success:', {
+      access_token: !!tokenData.access_token,
+      refresh_token: !!tokenData.refresh_token,
+      id_token: !!tokenData.id_token,
+    });
 
     // Optionally fetch Yahoo user info or fantasy profile
     let userInfo = null;

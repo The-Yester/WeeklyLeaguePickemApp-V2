@@ -6,7 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "weeklyleaguepickemapp",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/Splash.png",
@@ -40,7 +44,9 @@
       "expo-splash-screen",
       "expo-font",
       "expo-image-picker",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

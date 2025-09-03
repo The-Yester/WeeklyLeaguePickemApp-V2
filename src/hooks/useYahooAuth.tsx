@@ -8,40 +8,44 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
-
 import { useAuth } from '@context/AuthContext';
 import { app } from '../config/firebase';
+import { getRedirectUri } from '../config/yahoo';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const discovery = {
   authorizationEndpoint: 'https://api.login.yahoo.com/oauth2/request_auth',
-  tokenEndpoint: 'https://api.login.yahoo.com/oauth2/get_token',
+  tokenEndpoint: 'https://api.login.yahoo.com/oauth2/token',
 };
 
 export function useYahooAuth() {
   const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
-  const isExpoGo = Constants.appOwnership === 'expo';
+  const isExpoGo = !Constants.appOwnership || Constants.appOwnership === 'expo';
 
-  const redirectUri = makeRedirectUri({
-    useProxy: isExpoGo,                 // ✅ Expo Go => proxy URL
-    native: 'weeklyleaguepickemapp://', // used by dev build (not Expo Go)
-  });
+  const redirectUri = getRedirectUri(isExpoGo);
 
   console.log('Generated redirect URI:', redirectUri);
 
   const [request, response, promptAsync] = useAuthRequest(
     {
       clientId: 'dj0yJmk9QlNGVXFQNmljM1U4JmQ9WVdrOVRrcFdSbkIzUlRZbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PThl',
-      scopes: ['fspt-r', 'fspt-w', 'openid', 'profile', 'email'], // add fspt-r later, after basic login works
       redirectUri,
+      scopes: ['openid', 'profile', 'email'], // add fspt-r later, after basic login works
       responseType: 'code',
       usePKCE: true,
+      state: Math.random().toString(36).substring(2),
     },
     discovery
   );
+
+  useEffect(() => {
+    if (request?.url) {
+      console.log('🔗 Yahoo OAuth request URL:', request.url);
+    }
+  }, [request]);
 
   const handleYahooResponse = useCallback(async (authCode, codeVerifier) => {
     setIsLoading(true);
@@ -50,7 +54,14 @@ export function useYahooAuth() {
       const exchangeYahooCode = httpsCallable(functions, 'exchangeYahooCodeForToken');
 
       const result = await exchangeYahooCode({ code: authCode, redirectUri, codeVerifier });
-      const { token, profile, accessToken, refreshToken } = result.data;
+      type YahooTokenResponse = {
+        token: string;
+        profile: any;
+        accessToken: string;
+        refreshToken: string;
+      };
+
+      const { token, profile, accessToken, refreshToken } = result.data as YahooTokenResponse;
 
       await AsyncStorage.setItem('yahooAccessToken', accessToken);
       await AsyncStorage.setItem('yahooRefreshToken', refreshToken);
@@ -83,7 +94,12 @@ export function useYahooAuth() {
       const { code } = response.params;
       console.log('✅ Yahoo login successful, received auth code:', code);
 
-      handleYahooResponse(code, request?.codeVerifier);
+      
+    if (!request?.codeVerifier) {
+      console.error('Missing codeVerifier — cannot complete token exchange.');
+      return;
+    }
+    handleYahooResponse(code, request.codeVerifier);
     } else if (response?.type === 'error') {
       console.error('❌ Yahoo login error:', response);
       Alert.alert('Yahoo Login Failed', 'Could not connect to your Yahoo account.');
