@@ -5,14 +5,14 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo',
-  authDomain: 'weekly-pickem-8cea3.firebaseapp.com',
-  databaseURL: 'https://weekly-pickem-8cea3-default-rtdb.firebaseio.com',
-  projectId: 'weekly-pickem-8cea3',
-  storageBucket: 'weekly-pickem-8cea3.firebasestorage.app',
-  messagingSenderId: '175850166680',
-  appId: '1:175850166680:web:df6578c80042662599b3ed',
-  measurementId: 'G-QLN0DJTEL7',
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY!,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN!,
+  databaseURL: process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL!,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET!,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID!,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID!,
 };
 
 const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
