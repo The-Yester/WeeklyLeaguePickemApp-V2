@@ -68,6 +68,7 @@ export default function YahooCallback() {
     const redirectUri =
       storedRedirect ||
       getRedirectUri(true) || // default to proxy during development
+      // @ts-ignore
       AuthSession.makeRedirectUri({ useProxy: true, scheme: 'weeklyleaguepickemapp' });
 
     setMessage('Exchanging code…');
@@ -89,7 +90,8 @@ export default function YahooCallback() {
     //   xoauth_yahoo_guid, id_token, user (optional)
     // }
 
-    if (!data || !data.access_token) {
+    const tokenData = /** @type {any} */ (data);
+    if (!tokenData || !tokenData['access_token']) {
       throw new Error('Token exchange failed. Missing access token.');
     }
 
