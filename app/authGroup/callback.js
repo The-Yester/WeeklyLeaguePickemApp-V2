@@ -1,4 +1,4 @@
-// app/(auth)/callback.js
+// app/authGroup/callback.js
 import React, { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator, Text } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -30,7 +30,7 @@ export default function YahooCallback() {
       console.error('Yahoo callback error:', err);
       setMessage('Authentication failed. Please try again.');
       // Give the user a moment to read, then return to login
-      setTimeout(() => router.replace('/(auth)/login'), 1200);
+      setTimeout(() => router.replace('/authGroup/login'), 1200);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -74,13 +74,12 @@ export default function YahooCallback() {
 
     // 5) Call your Cloud Function to perform the secure token exchange
     //    The function should use server-side client_secret and validate everything.
-    const exchangeYahooCodeForToken = httpsCallable(functions, EXCHANGE_FN_NAME);
-    const { data } = await exchangeYahooCodeForToken({
+    const CodeForToken = httpsCallable(functions, EXCHANGE_FN_NAME);
+    const { data } = await CodeForToken({
       code: authCode,
       code_verifier: codeVerifier,
       redirect_uri: redirectUri,
-      // optionally include: grant_type: 'authorization_code'
-      // the server can infer client_id/secret from env
+      grant_type: 'authorization_code', // ✅ include this
       includeUserInfo: true,
     });
 
@@ -106,7 +105,7 @@ export default function YahooCallback() {
     ]);
 
     setMessage('Signed in. Redirecting…');
-    router.replace('/home');
+    router.replace('/appGroup/home');
   };
 
   return (

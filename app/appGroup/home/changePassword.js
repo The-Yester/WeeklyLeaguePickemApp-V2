@@ -42,12 +42,12 @@ const ChangePasswordScreen = () => {
           setCurrentUser(JSON.parse(userString));
         } else {
           Alert.alert("Error", "User session not found. Please log in again.");
-          router.replace('/(auth)/login'); // Redirect if no user
+          router.replace('/authGroup/login'); // Redirect if no user
         }
       } catch (e) {
         console.error("Failed to load current user:", e);
         Alert.alert("Error", "Could not load user data.");
-        router.replace('/(auth)/login');
+        router.replace('/authGroup/login');
       } finally {
         setIsFetchingUser(false);
       }

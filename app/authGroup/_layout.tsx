@@ -1,4 +1,4 @@
-// app/(auth)/_layout.js
+// app/authGroup/_layout.js
 import React from 'react';
 import { Stack } from 'expo-router';
 

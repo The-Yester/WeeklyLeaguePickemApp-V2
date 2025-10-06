@@ -4,6 +4,7 @@ import { Tabs, useRouter } from 'expo-router';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { Alert } from 'react-native';
 import * as Linking from 'expo-linking';
+import { AuthProvider } from '../../src/context/AuthContext';
 // Correct the import path if your context folder is at the project root
 
 const COLORS = {
@@ -107,8 +108,10 @@ function AppTabsLayout() {
 }
 
 // The component that is exported wraps the layout with the provider
-export default function AppLayoutWithProvider() {
+export default function AppLayoutWithProvider({ children }) {
   return (
-    {children}
+    <AuthProvider>
+      {children}
+    </AuthProvider>
   );
 }

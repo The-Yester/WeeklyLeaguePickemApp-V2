@@ -1,11 +1,13 @@
 // functions/src/fantasy/proxy.js
-const functions = require('firebase-functions');
+const { onCall } = require('firebase-functions/v2/https');
+const { setGlobalOptions } = require('firebase-functions/v2');
+
+setGlobalOptions({ region: 'us-central1' });
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) admin.initializeApp();
 
-const REGION = 'us-central1';
-const YAHOO_TOKEN_ENDPOINT = 'https://api.login.yahoo.com/oauth2/get_token';
+const YAHOO_TOKEN_ENDPOINT = 'https://api.login.yahoo.com/oauth2/token';
 const YAHOO_FANTASY_BASE = 'https://fantasysports.yahooapis.com/fantasy/v2';
 
 const tokenDocRef = (uid) =>
@@ -70,10 +72,7 @@ async function ensureAccessToken(uid) {
   await ref.set(updated, { merge: true });
   return access_token;
 }
-
-exports.yahooFantasyProxy = functions
-  .region(REGION)
-  .https.onCall(async (data, context) => {
+  exports.yahooFantasyProxy = onCall(async (data, context) => {
     const uid = context.auth?.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign in required.');
 

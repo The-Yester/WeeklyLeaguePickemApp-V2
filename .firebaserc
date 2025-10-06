@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "weekly-pickem-8cea3"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

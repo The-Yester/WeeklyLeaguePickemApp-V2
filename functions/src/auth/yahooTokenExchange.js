@@ -1,83 +1,73 @@
-// functions/src/auth/yahooTokenExchange.js
+const express = require('express');
+const cors = require('cors');
 const functions = require('firebase-functions');
+const admin = require('firebase-admin');
 const fetch = require('node-fetch');
+const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
 
-exports.exchangeYahooCodeForToken = functions.https.onCall(async (data, context) => {
+admin.initializeApp();
+const secretClient = new SecretManagerServiceClient();
+
+const app = express();
+app.use(cors({ origin: true }));
+app.use(express.json());
+
+async function getSecret(secretName) {
+  const [version] = await secretClient.accessSecretVersion({
+    name: `projects/${process.env.GCP_PROJECT}/secrets/${secretName}/versions/latest`,
+  });
+  return version.payload.data.toString();
+}
+
+app.post('/token', async (req, res) => {
   try {
-    const { code, code_verifier, redirect_uri, includeUserInfo } = data || {};
+    const clientId = await getSecret('YAHOO_CLIENT_ID');
+    const clientSecret = await getSecret('YAHOO_CLIENT_SECRET');
+    console.log('✅ Yahoo config loaded:', { clientId, clientSecret: !!clientSecret });
 
-    if (!code || !code_verifier || !redirect_uri) {
-      throw new functions.https.HttpsError(
-        'invalid-argument',
-        'Missing code, code_verifier, or redirect_uri.'
-      );
-    }
+    const { code, code_verifier, redirect_uri } = req.body || {};
+    console.log('📦 Incoming payload:', { code, code_verifier, redirect_uri });
 
-    const clientId = functions.config().yahoo.client_id;
-    const clientSecret = functions.config().yahoo.client_secret;
-
-    if (!clientId || !clientSecret) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Yahoo OAuth client credentials are not set in functions config.'
-      );
-    }
-
-    // Exchange the authorization code for tokens
-    const tokenRes = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
-      method: 'POST',
-      headers: {
-        Authorization:
-          'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        redirect_uri,
-        code,
-        code_verifier,
-        grant_type: 'authorization_code',
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      const errText = await tokenRes.text();
-      console.error('Yahoo token exchange failed:', errText);
-      throw new functions.https.HttpsError(
-        'unauthenticated',
-        `Token endpoint error: ${tokenRes.status} ${errText}`
-      );
-    }
-
-    const tokenData = await tokenRes.json();
-
-    console.log('Yahoo token exchange success:', {
-      access_token: !!tokenData.access_token,
-      refresh_token: !!tokenData.refresh_token,
-      id_token: !!tokenData.id_token,
-    });
-
-    // Optionally fetch Yahoo user info or fantasy profile
-    let userInfo = null;
-    if (includeUserInfo && tokenData.access_token) {
-      const userRes = await fetch('https://api.login.yahoo.com/openid/v1/userinfo', {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-        },
-      });
-      if (userRes.ok) {
-        userInfo = await userRes.json();
-      } else {
-        console.warn('Failed to fetch Yahoo user info:', await userRes.text());
-      }
-    }
-
-    return {
-      ...tokenData,
-      ...(userInfo ? { user: userInfo } : {}),
+    const payload = {
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      code_verifier,
+      redirect_uri,
+      grant_type: 'authorization_code',
     };
-  } catch (err) {
-    console.error('exchangeYahooCodeForToken error:', err);
-    if (err instanceof functions.https.HttpsError) throw err;
-    throw new functions.https.HttpsError('internal', err.message);
+
+    console.log('📤 Yahoo token request payload:', payload);
+
+    const tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(payload),
+    });
+
+    const rawText = await tokenResponse.text();
+    console.log('📡 Yahoo token response:', rawText);
+
+    if (!tokenResponse.ok) {
+      throw new Error(`Yahoo token exchange failed with status ${tokenResponse.status}`);
+    }
+
+    const tokenData = JSON.parse(rawText);
+    if (!tokenData.id_token) throw new Error('Missing id_token in Yahoo response');
+
+    const base64Url = tokenData.id_token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const decodedPayload = JSON.parse(Buffer.from(base64, 'base64').toString());
+    const yahooUserId = decodedPayload.sub;
+
+    const customToken = await admin.auth().createCustomToken(yahooUserId);
+    console.log('✅ Firebase custom token created');
+
+    res.status(200).json({ token: customToken });
+  } catch (error) {
+    console.error('❌ Token exchange failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
+
+exports.yahooTokenExchange = functions.https.onRequest(app);

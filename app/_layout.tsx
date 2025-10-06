@@ -1,29 +1,33 @@
-// app/_layout.js
-import React, { useEffect } from 'react'; // useEffect might be needed in AppStack
+import React, { useEffect } from 'react';
 import { Stack, SplashScreen } from 'expo-router';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { ActivityIndicator, View, StatusBar, StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as WebBrowser from 'expo-web-browser';
+import { router } from 'expo-router';
 
-const PRIMARY_COLOR = '#1A237E'; 
+WebBrowser.maybeCompleteAuthSession();
 
-// This internal component renders the actual navigation stack once auth state is determined
-// It uses the useAuth hook to access the loading state and user.
+const PRIMARY_COLOR = '#1A237E';
+
 function AppStackLayout() {
-  const { isLoadingAuth } = useAuth(); // Get auth loading state from context
+  const { isLoadingAuth, user, inAuthGroup } = useAuth();
 
   useEffect(() => {
-    // Hide splash screen once the AuthProvider has finished its initial loading
-    // and this component is ready to render something (or nothing if still loading).
     if (!isLoadingAuth) {
-      SplashScreen.hideAsync().catch(e => console.warn("AppStackLayout SplashScreen.hideAsync error:", e));
+      SplashScreen.hideAsync().catch(e =>
+        console.warn("AppStackLayout SplashScreen.hideAsync error:", e)
+      );
+
+      // ✅ Redirect anonymous users to login
+      if (user?.username === 'Anonymous' && !inAuthGroup) {
+        console.log('🔀 Redirecting anonymous user to /authGroup/login');
+        router.replace('/authGroup/login');
+      }
     }
-  }, [isLoadingAuth]);
+  }, [isLoadingAuth, user, inAuthGroup]);
 
   if (isLoadingAuth) {
-    // AuthProvider is still determining the initial user state.
-    // SplashScreen.preventAutoHideAsync() should have been called in AuthProvider.
-    // This view might be shown very briefly or covered by the native splash.
     console.log("AppStackLayout: Auth is loading, showing loading indicator.");
     return (
       <View style={styles.loadingContainer}>
@@ -34,10 +38,6 @@ function AppStackLayout() {
   }
 
   console.log("AppStackLayout: Auth loading complete. Rendering Expo Router Stack.");
-  // Auth state is resolved. AuthProvider's useEffect will handle redirection.
-  // This Stack just defines the available top-level route groups.
-  // Expo Router will automatically look for _layout.js files in app/(auth)/ and app/(app)/
-  // to define the screens and layout for these groups.
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="authGroup" options={{ gestureEnabled: false }} />
@@ -68,8 +68,8 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY_COLOR,
   },
   loadingText: {
-      marginTop: 10,
-      color: '#FFFFFF',
-      fontSize: 16,
-  }
+    marginTop: 10,
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
 });

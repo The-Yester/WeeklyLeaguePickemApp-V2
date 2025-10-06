@@ -18,9 +18,9 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link } from 'expo-router';
 import { useAuth } from '../../../src/context/AuthContext'; // Adjust path if your context file is elsewhere
 import * as Notifications from 'expo-notifications'; // Import expo-notifications
-import { getAuth, deleteUser } from "firebase/auth";
+import { deleteUser } from "firebase/auth";
 import { doc, deleteDoc, collection, getDocs } from "firebase/firestore";
-import { db } from '../../../src/config/firebase'; // Adjust path if needed
+import { auth, db } from '../../../src/config/firebase'; // Adjust path if needed
 
 // Colors
 const PRIMARY_COLOR = '#1f366a';
@@ -212,7 +212,6 @@ const SettingsScreen = () => {
           style: "destructive",
           onPress: async () => {
             console.log("Starting account deletion process...");
-            const auth = getAuth();
             const firebaseUser = auth.currentUser;
 
             if (!firebaseUser) {
