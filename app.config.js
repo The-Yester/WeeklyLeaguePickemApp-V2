@@ -35,7 +35,8 @@ export default {
           action: "VIEW",
           data: {
             scheme: "weeklyleaguepickemapp",
-            host: "auth"
+            host: "authGroup",
+            pathPrefix: "/callback"
           },
           category: ["BROWSABLE", "DEFAULT"]
         }

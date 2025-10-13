@@ -25,8 +25,9 @@ app.post('/token', async (req, res) => {
     const clientSecret = await getSecret('YAHOO_CLIENT_SECRET');
     console.log('✅ Yahoo config loaded:', { clientId, clientSecret: !!clientSecret });
 
-    const { code, code_verifier, redirect_uri } = req.body || {};
+    const { code, code_verifier, redirect_uri, state } = req.body || {};
     console.log('📦 Incoming payload:', { code, code_verifier, redirect_uri });
+    console.log('🔁 OAuth callback params:', { code, state });
 
     const payload = {
       client_id: clientId,

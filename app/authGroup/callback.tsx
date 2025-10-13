@@ -1,12 +1,13 @@
-// app/authGroup/callback.js
+// app/authGroup/callback.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator, Text } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, usePathname } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as AuthSession from 'expo-auth-session';
 import { httpsCallable } from 'firebase/functions';
+import { OAuthProvider, signInWithCredential } from 'firebase/auth';
 
-import { functions } from '../../src/config/firebase';
+import { auth, functions } from '../../src/config/firebase';
 import { getRedirectUri } from '../../src/config/yahoo';
 
 const EXCHANGE_FN_NAME = 'exchangeYahooCodeForToken'; // Cloud Function callable
@@ -22,6 +23,12 @@ export default function YahooCallback() {
   const params = useLocalSearchParams(); // expects code, state, error, error_description
   const [message, setMessage] = useState('Finishing sign-in…');
   const didRun = useRef(false);
+  const pathname = usePathname();
+
+  console.log('🔁 YahooCallback: Received search params:', params);
+  console.log('📍 Current route pathname:', pathname);
+  // @ts-ignore
+  console.log('🌐 Full redirect URI:', AuthSession.makeRedirectUri({ useProxy: true, scheme: 'weeklyleaguepickemapp' }));
 
   useEffect(() => {
     if (didRun.current) return;
@@ -29,8 +36,9 @@ export default function YahooCallback() {
     finishAuth().catch((err) => {
       console.error('Yahoo callback error:', err);
       setMessage('Authentication failed. Please try again.');
-      // Give the user a moment to read, then return to login
+      console.log('❌ Yahoo sign-in failed. Redirecting to login.');
       setTimeout(() => router.replace('/authGroup/login'), 1200);
+      // Give the user a moment to read, then return to login
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -52,6 +60,7 @@ export default function YahooCallback() {
     }
 
     // 3) CSRF/state check
+    console.log('🔑 Parsed code and state:', { authCode, returnedState });
     const storedState = await SecureStore.getItemAsync(SS_KEYS.state);
     if (!storedState || storedState !== returnedState) {
       throw new Error('State mismatch. Please restart sign-in.');
@@ -84,16 +93,28 @@ export default function YahooCallback() {
       includeUserInfo: true,
     });
 
+    console.log('🔑 Token exchange response:', data);
+
     // Expected shape (example):
     // {
     //   access_token, refresh_token, expires_in, token_type,
     //   xoauth_yahoo_guid, id_token, user (optional)
     // }
 
-    const tokenData = /** @type {any} */ (data);
-    if (!tokenData || !tokenData['access_token']) {
-      throw new Error('Token exchange failed. Missing access token.');
-    }
+    const tokenData = data as {
+      access_token: string;
+      id_token: string;
+      [key: string]: any;
+    };
+
+    const yahooProvider = new OAuthProvider('yahoo.com');
+    const credential = yahooProvider.credential({
+      idToken: tokenData?.id_token,
+      accessToken: tokenData?.access_token,
+    });
+
+
+    await signInWithCredential(auth, credential);
 
     // 6) Persist session for your app (adjust to your AuthContext if needed)
     await SecureStore.setItemAsync(SS_KEYS.session, JSON.stringify(data));
@@ -107,6 +128,7 @@ export default function YahooCallback() {
     ]);
 
     setMessage('Signed in. Redirecting…');
+    console.log('✅ Yahoo sign-in complete. Redirecting to home.');
     router.replace('/appGroup/home');
   };
 
