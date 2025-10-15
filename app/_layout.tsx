@@ -1,7 +1,8 @@
+// app/_layout.tsx
 import React, { useEffect } from 'react';
 import { Stack, SplashScreen } from 'expo-router';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
-import { ActivityIndicator, View, StatusBar, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, View, StatusBar, StyleSheet, Text, Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as WebBrowser from 'expo-web-browser';
 import { router } from 'expo-router';
@@ -19,7 +20,6 @@ function AppStackLayout() {
         console.warn("AppStackLayout SplashScreen.hideAsync error:", e)
       );
 
-      // ✅ Redirect anonymous users to login
       if (user?.username === 'Anonymous' && !inAuthGroup) {
         console.log('🔀 Redirecting anonymous user to /authGroup/login');
         router.replace('/authGroup/login');
@@ -49,6 +49,12 @@ function AppStackLayout() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      console.log('🌍 RootLayout received initial URL:', url);
+    });
+  }, []);
+
   console.log("RootLayout: Rendering with AuthProvider and AppStackLayout.");
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

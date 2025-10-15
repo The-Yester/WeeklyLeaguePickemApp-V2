@@ -1,7 +1,7 @@
 // app/authGroup/callback.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, Text } from 'react-native';
-import { useLocalSearchParams, useRouter, usePathname } from 'expo-router';
+import { View, ActivityIndicator, Text, Linking } from 'react-native';
+import { useSearchParams, useRouter, usePathname } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as AuthSession from 'expo-auth-session';
 import { httpsCallable } from 'firebase/functions';
@@ -20,7 +20,7 @@ const SS_KEYS = {
 
 export default function YahooCallback() {
   const router = useRouter();
-  const params = useLocalSearchParams(); // expects code, state, error, error_description
+  const params = useSearchParams(); // expects code, state, error, error_description
   const [message, setMessage] = useState('Finishing sign-in…');
   const didRun = useRef(false);
   const pathname = usePathname();
@@ -41,6 +41,12 @@ export default function YahooCallback() {
       // Give the user a moment to read, then return to login
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      console.log('🔗 Initial URL received by app:', url);
+    });
   }, []);
 
   const finishAuth = async () => {
@@ -78,7 +84,7 @@ export default function YahooCallback() {
       storedRedirect ||
       getRedirectUri(true) || // default to proxy during development
       // @ts-ignore
-      AuthSession.makeRedirectUri({ useProxy: true, scheme: 'weeklyleaguepickemapp' });
+      AuthSession.makeRedirectUri({ useProxy: false, scheme: 'weeklyleaguepickemapp' });
 
     setMessage('Exchanging code…');
 
