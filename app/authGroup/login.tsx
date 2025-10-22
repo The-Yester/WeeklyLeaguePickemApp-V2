@@ -12,7 +12,7 @@ import {
 import { useYahooAuth } from '../../src/hooks/useYahooAuth';
 import { exchangeYahooCodeForToken } from '@/services/yahooTokenExchange';
 import { useLocalSearchParams, router } from 'expo-router';
-import { nanoid } from 'nanoid';
+import { nanoid } from 'nanoid/non-secure';
 import * as SecureStore from 'expo-secure-store';
 import { useAuth } from '@context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
