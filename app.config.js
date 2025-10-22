@@ -41,7 +41,8 @@ export default {
           },
           category: ["BROWSABLE", "DEFAULT"]
         }
-      ]
+      ],
+      jsEngine: "jsc"
     },
     platforms: ["ios", "android", "web"],
     plugins: [
