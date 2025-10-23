@@ -45,7 +45,12 @@ export default function YahooCallback() {
 
   useEffect(() => {
     Linking.getInitialURL().then((url) => {
-      console.log('🔗 Initial URL received by app:', url);
+      console.log("🔗 Deep link received:", url);
+      const parsed = new URL(url ?? "");
+      const code = parsed.searchParams.get("code");
+      const state = parsed.searchParams.get("state");
+      console.log("✅ Parsed code:", code);
+      console.log("✅ Parsed state:", state);
     });
   }, []);
 
