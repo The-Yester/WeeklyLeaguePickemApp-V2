@@ -24,12 +24,15 @@
     "preview": {
       "developmentClient": false,
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
         "YAHOO_CLIENT_ID": "dj0yJmk9YzB5OE1UcEwxMXBjJmQ9WVdrOU9YbExTRk5YZDFVbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTky",
         "YAHOO_CLIENT_SECRET": "4957cd3f9454303aa20cdab15ee7c833d4820294",
         "NPM_FLAGS": "--legacy-peer-deps"
-      },
+        },
       "ios": {
         "image": "macos-sequoia-15.3-xcode-16.2"
       }
