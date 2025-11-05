@@ -6,6 +6,7 @@ import { ActivityIndicator, View, StatusBar, StyleSheet, Text, Linking } from 'r
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as WebBrowser from 'expo-web-browser';
 import { router } from 'expo-router';
+import '../../polyfills';
 
 WebBrowser.maybeCompleteAuthSession();
 
