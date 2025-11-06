@@ -24,3 +24,5 @@ if (!Array.prototype.findLast) {
     return undefined;
   };
 }
+
+console.log('[PickemApp] ✅ Polyfills loaded');

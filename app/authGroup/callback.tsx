@@ -19,6 +19,7 @@ const SS_KEYS = {
 };
 
 export default function YahooCallback() {
+  console.log("✅ YahooCallback screen mounted");
   const router = useRouter();
   const params = useSearchParams(); // expects code, state, error, error_description
   const [message, setMessage] = useState('Finishing sign-in…');
