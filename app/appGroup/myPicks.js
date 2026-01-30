@@ -16,14 +16,12 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
-import { useAuth } from '@context/AuthContext';
-import { db } from '@config/firebase'; // Adjust path if needed
+import { useAuth } from '../../src/context/AuthContext';
+import { db } from '../../src/config/firebase'; // Adjust path if needed
 
 // --- Configuration ---
-const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;
-const SPREADSHEET_ID = '1rVuE_BNO9C9M69uZnAHfD5pTI9sno9UXQI4NTDPCQLY';
-const SHEET_NAME_AND_RANGE = '2025Matchups!A:N';
 const MAX_WEEKS = 18;
+
 
 // --- Colors ---
 const PRIMARY_COLOR = '#1f366a';
@@ -36,33 +34,14 @@ const PENDING_PICK_COLOR = '#FF9800';
 const BORDER_COLOR = '#E0E0E0';
 
 
-const parseSheetData = (jsonData) => {
-  if (!jsonData || !Array.isArray(jsonData.values) || jsonData.values.length === 0) { return []; }
-  const [headerRow, ...dataRows] = jsonData.values;
-  if (!headerRow || !Array.isArray(headerRow)) { return []; }
-  const headers = headerRow.map(header => String(header).trim());
-  return dataRows.map(row => {
-    if (!Array.isArray(row)) return null;
-    const entry = {};
-    headers.forEach((header, index) => {
-      const value = (row[index] !== undefined && row[index] !== null) ? String(row[index]).trim() : '';
-      if (value.toUpperCase() === 'TRUE') { entry[header] = true; }
-      else if (value.toUpperCase() === 'FALSE') { entry[header] = false; }
-      else if (header.includes("Points") || header === "Week" || header === "SeasonYear") {
-         entry[header] = !isNaN(Number(value)) && value !== '' ? Number(value) : 0;
-      }
-      else { entry[header] = value; }
-    });
-    return entry;
-  }).filter(Boolean);
-};
+// parseSheetData removed
 
 const MyPicksScreen = () => {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const [currentWeek, setCurrentWeek] = useState(1);
   const [allMatchups, setAllMatchups] = useState([]);
   const [displayablePicks, setDisplayablePicks] = useState([]);
@@ -76,27 +55,22 @@ const MyPicksScreen = () => {
       setRefreshing(false);
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
     try {
       // Step 1: Fetch matchups if they are not already loaded
       let matchups = allMatchups;
-      if (matchups.length === 0) {
-        if (!GOOGLE_SHEETS_API_KEY || GOOGLE_SHEETS_API_KEY.includes('YOUR_GOOGLE_SHEETS_API_KEY')) {
-          throw new Error('API Key is not configured.');
-        }
-        const encodedSheetNameAndRange = encodeURIComponent(SHEET_NAME_AND_RANGE);
-        const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodedSheetNameAndRange}?key=${GOOGLE_SHEETS_API_KEY}`;
-        const response = await fetch(apiUrl);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
-        }
-        const jsonData = await response.json();
-        matchups = parseSheetData(jsonData);
-        setAllMatchups(matchups);
-      }
+
+
+      // Note: for MyPicks, we usually want specific week matchups. 
+      // But if we already fetched them, we could reuse.
+      // However, Yahoo API fetches per week usually.
+
+      const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
+      console.log(`MyPicks: Fetching matchups for week ${week}`);
+      matchups = await getWeeklyMatchups(week);
+      setAllMatchups(matchups);
 
       // Step 2: Fetch user picks for the current week from Firestore
       const weekPicksDocRef = doc(db, "users", user.uid, "picks", `week_${week}`);
@@ -107,32 +81,32 @@ const MyPicksScreen = () => {
       const matchupsForThisWeek = matchups.filter(m => m && m.Week === week);
       let calculatedScore = 0;
       const processedPicks = matchupsForThisWeek.map(matchup => {
-          const userPickAbbr = userPicksForWeek[matchup.UniqueID] || null;
-          let pickStatus = 'PENDING';
-          let pointsAwarded = 0;
+        const userPickAbbr = userPicksForWeek[matchup.UniqueID] || null;
+        let pickStatus = 'PENDING';
+        let pointsAwarded = 0;
 
-          if (!userPickAbbr) {
-              pickStatus = 'NO_PICK';
-          } else {
-              const winningTeam = String(matchup.WinningTeam || '').trim();
-              if (winningTeam !== '') {
-                  let winnerAbbr = '';
-                  if (String(matchup.HomeTeamName).trim() === winningTeam) winnerAbbr = String(matchup.HomeTeamAB).trim().toUpperCase();
-                  else if (String(matchup.AwayTeamName).trim() === winningTeam) winnerAbbr = String(matchup.AwayTeamAB).trim().toUpperCase();
-                  else winnerAbbr = winningTeam.toUpperCase();
-                  
-                  if (userPickAbbr.toUpperCase() === winnerAbbr) {
-                      pickStatus = 'CORRECT';
-                      pointsAwarded = 1;
-                      calculatedScore += 1;
-                  } else {
-                      pickStatus = 'INCORRECT';
-                  }
-              }
+        if (!userPickAbbr) {
+          pickStatus = 'NO_PICK';
+        } else {
+          const winningTeam = String(matchup.WinningTeam || '').trim();
+          if (winningTeam !== '') {
+            let winnerAbbr = '';
+            if (String(matchup.HomeTeamName).trim() === winningTeam) winnerAbbr = String(matchup.HomeTeamAB).trim().toUpperCase();
+            else if (String(matchup.AwayTeamName).trim() === winningTeam) winnerAbbr = String(matchup.AwayTeamAB).trim().toUpperCase();
+            else winnerAbbr = winningTeam.toUpperCase();
+
+            if (userPickAbbr.toUpperCase() === winnerAbbr) {
+              pickStatus = 'CORRECT';
+              pointsAwarded = 1;
+              calculatedScore += 1;
+            } else {
+              pickStatus = 'INCORRECT';
+            }
           }
-          return { ...matchup, userPickedTeamAbbr: userPickAbbr, pickStatus, pointsAwarded };
+        }
+        return { ...matchup, userPickedTeamAbbr: userPickAbbr, pickStatus, pointsAwarded };
       });
-      
+
       setDisplayablePicks(processedPicks);
       setWeeklyScore(calculatedScore);
 
@@ -153,13 +127,13 @@ const MyPicksScreen = () => {
       }
     }, [currentWeek, user, loadDataForWeek])
   );
-  
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    if(user !== undefined) {
-        loadDataForWeek(currentWeek);
+    if (user !== undefined) {
+      loadDataForWeek(currentWeek);
     } else {
-        setRefreshing(false);
+      setRefreshing(false);
     }
   }, [currentWeek, user, loadDataForWeek]);
 
@@ -176,12 +150,12 @@ const MyPicksScreen = () => {
       case 'PENDING':
         return <Ionicons name="hourglass-outline" size={22} color={PENDING_PICK_COLOR} />;
       case 'NO_PICK':
-        return <Text style={styles.noPickText}>-</Text>; 
+        return <Text style={styles.noPickText}>-</Text>;
       default:
         return null;
     }
   };
-  
+
   const getTeamFullName = (teamAbbrOrName, matchup) => {
     if (!teamAbbrOrName || !matchup) return teamAbbrOrName || 'N/A';
     const term = String(teamAbbrOrName).trim();
@@ -203,7 +177,7 @@ const MyPicksScreen = () => {
       );
     }
     if (displayablePicks.length === 0 && !isLoading) {
-        return <Text style={styles.noDataText}>No matchups found for Week {currentWeek}.</Text>;
+      return <Text style={styles.noDataText}>No matchups found for Week {currentWeek}.</Text>;
     }
 
     return displayablePicks.map((item) => {
@@ -214,18 +188,18 @@ const MyPicksScreen = () => {
         <View key={item.UniqueID} style={styles.pickCard}>
           <View style={styles.matchupInfo}>
             <View style={styles.teamRow}>
-              {item.AwayTeamLogo && <Image source={{uri: item.AwayTeamLogo}} style={styles.teamLogo}/>}
+              {item.AwayTeamLogo && <Image source={{ uri: item.AwayTeamLogo }} style={styles.teamLogo} />}
               <Text style={styles.teamNameText}>{item.AwayTeamName || 'Away Team'} ({item.AwayTeamAB})</Text>
             </View>
             <Text style={styles.vsTextSmall}>vs</Text>
             <View style={styles.teamRow}>
-              {item.HomeTeamLogo && <Image source={{uri: item.HomeTeamLogo}} style={styles.teamLogo}/>}
+              {item.HomeTeamLogo && <Image source={{ uri: item.HomeTeamLogo }} style={styles.teamLogo} />}
               <Text style={styles.teamNameText}>{item.HomeTeamName || 'Home Team'} ({item.HomeTeamAB})</Text>
             </View>
           </View>
           <View style={styles.pickDetails}>
             <Text style={styles.detailTitle}>Your Pick:</Text>
-            <Text style={[ styles.detailValue, item.pickStatus === 'CORRECT' && styles.correctText, item.pickStatus === 'INCORRECT' && styles.incorrectText, ]}>
+            <Text style={[styles.detailValue, item.pickStatus === 'CORRECT' && styles.correctText, item.pickStatus === 'INCORRECT' && styles.incorrectText,]}>
               {item.userPickedTeamAbbr ? pickedTeamFullName : 'No Pick'}
             </Text>
           </View>
@@ -237,7 +211,7 @@ const MyPicksScreen = () => {
           </View>
           <View style={styles.pickStatusRow}>
             {renderPickStatusIcon(item.pickStatus)}
-            <Text style={[ styles.statusText, item.pickStatus === 'CORRECT' && styles.correctText, item.pickStatus === 'INCORRECT' && styles.incorrectText, item.pickStatus === 'PENDING' && styles.pendingText, ]}>
+            <Text style={[styles.statusText, item.pickStatus === 'CORRECT' && styles.correctText, item.pickStatus === 'INCORRECT' && styles.incorrectText, item.pickStatus === 'PENDING' && styles.pendingText,]}>
               {item.pickStatus.replace('_', ' ')}
               {item.pickStatus === 'CORRECT' && ` (+${item.pointsAwarded} pt)`}
             </Text>
@@ -250,35 +224,33 @@ const MyPicksScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Picks</Text>
-      </View>
+
       <View style={styles.weekNavigation}>
-          <TouchableOpacity
-              style={[styles.weekNavButton, (currentWeek === 1 || isLoading) && styles.weekNavButtonDisabled]}
-              onPress={() => handleWeekChange(Math.max(1, currentWeek - 1))}
-              disabled={currentWeek === 1 || isLoading}
-          >
-              <Ionicons name="chevron-back-outline" size={18} color={TEXT_COLOR_LIGHT} />
-              <Text style={styles.weekNavButtonText}>Prev</Text>
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.weekNavButton, (currentWeek === 1 || isLoading) && styles.weekNavButtonDisabled]}
+          onPress={() => handleWeekChange(Math.max(1, currentWeek - 1))}
+          disabled={currentWeek === 1 || isLoading}
+        >
+          <Ionicons name="chevron-back-outline" size={18} color={TEXT_COLOR_LIGHT} />
+          <Text style={styles.weekNavButtonText}>Prev</Text>
+        </TouchableOpacity>
 
-          <Text style={styles.weekIndicatorText}>Week {currentWeek}</Text>
+        <Text style={styles.weekIndicatorText}>Week {currentWeek}</Text>
 
-          <TouchableOpacity
-              style={[styles.weekNavButton, (currentWeek >= MAX_WEEKS || isLoading) && styles.weekNavButtonDisabled]}
-              onPress={() => handleWeekChange(currentWeek + 1)}
-              disabled={currentWeek >= MAX_WEEKS || isLoading}
-          >
-              <Text style={styles.weekNavButtonText}>Next</Text>
-              <Ionicons name="chevron-forward-outline" size={18} color={TEXT_COLOR_LIGHT} />
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.weekNavButton, (currentWeek >= MAX_WEEKS || isLoading) && styles.weekNavButtonDisabled]}
+          onPress={() => handleWeekChange(currentWeek + 1)}
+          disabled={currentWeek >= MAX_WEEKS || isLoading}
+        >
+          <Text style={styles.weekNavButtonText}>Next</Text>
+          <Ionicons name="chevron-forward-outline" size={18} color={TEXT_COLOR_LIGHT} />
+        </TouchableOpacity>
       </View>
-       <View style={styles.scoreSummary}>
+      <View style={styles.scoreSummary}>
         <Text style={styles.scoreText}>Week {currentWeek} Score: {weeklyScore} pts</Text>
       </View>
       <ScrollView
-        contentContainerStyle={{paddingBottom: 20}}
+        contentContainerStyle={{ paddingBottom: 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[PRIMARY_COLOR]} tintColor={PRIMARY_COLOR} />}
       >
         {renderContent()}
@@ -290,8 +262,8 @@ const MyPicksScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f4f7' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  header: { backgroundColor: PRIMARY_COLOR, padding: 15, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 40, alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: TEXT_COLOR_LIGHT },
+  // header: { backgroundColor: PRIMARY_COLOR, padding: 15, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 40, alignItems: 'center' },
+  // headerTitle: { fontSize: 20, fontWeight: 'bold', color: TEXT_COLOR_LIGHT },
   weekNavigation: {
     flexDirection: 'row',
     justifyContent: 'space-between',

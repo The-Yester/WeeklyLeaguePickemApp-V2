@@ -2,12 +2,13 @@ export default {
   expo: {
     name: "WeeklyLeaguePickemApp",
     slug: "WeeklyLeaguePickemApp",
+    owner: "ryester",
     scheme: "weeklyleaguepickemapp",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
-    devLauncher: { enabled: false },
+    devLauncher: { enabled: true },
     splash: {
       image: "./assets/Splash.png",
       resizeMode: "contain",

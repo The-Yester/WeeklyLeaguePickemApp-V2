@@ -1,5 +1,5 @@
 // app/(app)/home/index.js (Previously HomeScreen.js)
-import React, { useState, useEffect, useCallback} from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,10 +17,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link, useFocusEffect } from 'expo-router';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
-import { useAuth } from '../../../src/context/AuthContext';
-import { db } from '../../../src/config/firebase'; // Adjust this path if needed
+import { useAuth } from '../../src/context/AuthContext';
+import { db } from '../../src/config/firebase'; // Adjust this path if needed
 
-const ArrowRightIcon = () => <Text style={{color: 'white', fontSize: 16}}>GAME ON! ➤</Text>;
+const ArrowRightIcon = () => <Text style={{ color: 'white', fontSize: 16 }}>GAME ON! ➤</Text>;
 
 // Colors
 const PRIMARY_COLOR = '#1f366a';
@@ -28,18 +28,18 @@ const SECONDARY_COLOR = 'green';
 const ACCENT_COLOR = '#FF9800';
 const HEADER_ICON_COLOR = '#FFFFFF';
 const TEXT_COLOR_DARK = '#333333';
-const TEXT_COLOR_LIGHT = '#FFFFFF'; 
+const TEXT_COLOR_LIGHT = '#FFFFFF';
 const GOLD_COLOR = '#FFC107'; // Brighter Gold
 const SILVER_COLOR = '#C0C0C0';
 const BRONZE_COLOR = '#CD7F32'; // Standard Bronze
-const CARD_BACKGROUND = '#FFFFFF'; 
+const CARD_BACKGROUND = '#FFFFFF';
 const BORDER_COLOR = '#E0E0E0';
 const PODIUM_TEXT_COLOR = '#424242'; // Dark grey for podium text
 
-// --- Configuration for Google Sheets API ---
-const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;
-const SPREADSHEET_ID = '1rVuE_BNO9C9M69uZnAHfD5pTI9sno9UXQI4NTDPCQLY';
-const SHEET_NAME_AND_RANGE = '2025Matchups!A:N';
+// --- Configuration for Yahoo Fantasy API ---
+// Removed Google Sheets Config
+// const SPREADSHEET_ID = '...';
+// const SHEET_NAME_AND_RANGE = '...';
 const MAX_WEEKS = 18; // Define the maximum week number
 
 // --- Weekly Picks Lock Schedule ---
@@ -65,32 +65,7 @@ const PICKS_LOCK_SCHEDULE = [
   { week: 18, date: '2026-01-01', lockTime: '12:00' },
 ];
 
-const parseSheetData = (jsonData) => { 
-  if (!jsonData || !Array.isArray(jsonData.values) || jsonData.values.length === 0) {
-    console.warn("HomeScreen - Google Sheets API: Invalid or empty data structure from API. JSON Response:", jsonData);
-    return [];
-  }
-  const [headerRow, ...dataRows] = jsonData.values;
-  if (!headerRow || !Array.isArray(headerRow)) {
-      console.warn("HomeScreen - Google Sheets API: Header row is missing or invalid.", jsonData);
-      return [];
-  }
-  const headers = headerRow.map(header => String(header).trim());
-  return dataRows.map(row => {
-    if (!Array.isArray(row)) return null;
-    const entry = {};
-    headers.forEach((header, index) => {
-      const value = (row[index] !== undefined && row[index] !== null) ? String(row[index]).trim() : '';
-      if (value.toUpperCase() === 'TRUE') { entry[header] = true; }
-      else if (value.toUpperCase() === 'FALSE') { entry[header] = false; }
-      else if (header.includes("Points") || header === "Week" || header === "SeasonYear") {
-         entry[header] = !isNaN(Number(value)) && value !== '' ? Number(value) : 0;
-      }
-      else { entry[header] = value; }
-    });
-    return entry;
-  }).filter(Boolean);
-};
+// parseSheetData removed as we now use Yahoo Service
 
 // --- NEW HELPER FUNCTION ---
 // This function determines the current week based on the schedule.
@@ -106,16 +81,16 @@ const getInitialWeek = () => {
   }
   // If all weeks are in the past, default to the last week of the season.
   console.log(`All weeks are in the past. Defaulting to Week ${MAX_WEEKS}`);
-  return MAX_WEEKS; 
+  return MAX_WEEKS;
 };
 
 const HomeScreen = () => {
   const router = useRouter();
   const { user: loggedInUser } = useAuth(); // Get user from context
 
-  const [isLoading, setIsLoading] = useState(true); 
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   const [profileImageUri, setProfileImageUri] = useState(null); // State for profile image
   const [allMatchups, setAllMatchups] = useState([]);
   const [featuredMatchup, setFeaturedMatchup] = useState(null);
@@ -126,22 +101,34 @@ const HomeScreen = () => {
   const [isProcessingScore, setIsProcessingScore] = useState(false);
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(true);
 
-  
+
   // Helper functions are defined outside the data loading flow.
-  const fetchMatchupsFromSheet = useCallback(async () => {
-    if (!GOOGLE_SHEETS_API_KEY || GOOGLE_SHEETS_API_KEY.includes('YOUR_GOOGLE_SHEETS_API_KEY')) {
-      throw new Error('API Key is not configured.');
+  // Helper functions are defined outside the data loading flow.
+  const fetchMatchupsFromYahoo = useCallback(async () => {
+    try {
+      const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
+      // Fetch ALL matchups? Or just current week?
+      // The original app fetched ALL rows from the sheet (A:N).
+      // Yahoo API is week-based.
+      // For the home screen, we need "current week" mostly, but "stats" needs all.
+      // Leaderboard needs "all past weeks".
+
+      // This is tricky. Yahoo API doesn't give "all season matchups" in one call easily.
+      // We might need to fetch current week for display.
+      // For Leaderboard (total score), we technically need all past weeks results.
+
+      // For MVP/first pass: Fetch CURRENT week for display.
+      // Leaderboard calculation might be incorrect if we don't have all data.
+      // Let's assume for now we just show Week 1-18 logic if we can iterate, 
+      // OR just fetch 'current' week to unblock the UI.
+
+      const matchups = await getWeeklyMatchups(currentWeek);
+      return matchups;
+    } catch (err) {
+      console.error("Failed to fetch Yahoo matchups:", err);
+      throw err;
     }
-    const encodedSheetNameAndRange = encodeURIComponent(SHEET_NAME_AND_RANGE);
-    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodedSheetNameAndRange}?key=${GOOGLE_SHEETS_API_KEY}`;
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
-    }
-    const jsonData = await response.json();
-    return parseSheetData(jsonData);
-  }, []);
+  }, [currentWeek]);
 
   const fetchAllPicksForUser = useCallback(async (userId) => {
     if (!userId) return [];
@@ -166,18 +153,18 @@ const HomeScreen = () => {
     if (!matchups || !picks) return 0;
     let score = 0;
     matchups.forEach(matchup => {
-        if (matchup.UniqueID && matchup.WinningTeam && String(matchup.WinningTeam).trim() !== '') {
-          const userPickForGame = picks.find(pick => pick.gameUniqueID === matchup.UniqueID);
-          const winningTeamFullName = String(matchup.WinningTeam).trim();
-          let actualWinnerAbbr = null;
-          if (String(matchup.HomeTeamName).trim() === winningTeamFullName) { actualWinnerAbbr = String(matchup.HomeTeamAB).trim().toUpperCase(); }
-          else if (String(matchup.AwayTeamName).trim() === winningTeamFullName) { actualWinnerAbbr = String(matchup.AwayTeamAB).trim().toUpperCase(); }
-          else { actualWinnerAbbr = winningTeamFullName.toUpperCase(); }
-          const userPickedAbbr = userPickForGame ? String(userPickForGame.pickedTeamAbbr).trim().toUpperCase() : null;
-          if (userPickForGame && actualWinnerAbbr && userPickedAbbr === actualWinnerAbbr) {
-              score++;
-          }
+      if (matchup.UniqueID && matchup.WinningTeam && String(matchup.WinningTeam).trim() !== '') {
+        const userPickForGame = picks.find(pick => pick.gameUniqueID === matchup.UniqueID);
+        const winningTeamFullName = String(matchup.WinningTeam).trim();
+        let actualWinnerAbbr = null;
+        if (String(matchup.HomeTeamName).trim() === winningTeamFullName) { actualWinnerAbbr = String(matchup.HomeTeamAB).trim().toUpperCase(); }
+        else if (String(matchup.AwayTeamName).trim() === winningTeamFullName) { actualWinnerAbbr = String(matchup.AwayTeamAB).trim().toUpperCase(); }
+        else { actualWinnerAbbr = winningTeamFullName.toUpperCase(); }
+        const userPickedAbbr = userPickForGame ? String(userPickForGame.pickedTeamAbbr).trim().toUpperCase() : null;
+        if (userPickForGame && actualWinnerAbbr && userPickedAbbr === actualWinnerAbbr) {
+          score++;
         }
+      }
     });
     return score;
   };
@@ -197,7 +184,7 @@ const HomeScreen = () => {
 
   const loadAllScreenData = useCallback(async () => {
     if (loggedInUser === undefined) return;
-    
+
     console.log("HomeScreen: Starting data load...");
     setIsLoading(true);
     setError(null);
@@ -205,13 +192,13 @@ const HomeScreen = () => {
       const usersCollectionRef = collection(db, "users");
       const [usersSnapshot, matchupsResult] = await Promise.all([
         getDocs(usersCollectionRef),
-        fetchMatchupsFromSheet()
+        fetchMatchupsFromYahoo()
       ]);
-      
+
       const allUsers = usersSnapshot.docs.map(doc => doc.data());
       setAllMatchups(matchupsResult);
 
-      
+
       if (loggedInUser) {
         setIsProcessingScore(true);
         const userDocRef = doc(db, "users", loggedInUser.uid);
@@ -229,7 +216,7 @@ const HomeScreen = () => {
         setTotalUserScore(0);
         setProfileImageUri(null);
       }
-      
+
       if (matchupsResult.length > 0) {
         setIsLoadingLeaderboard(true);
         const leaderboard = await calculateAllScores(matchupsResult, allUsers);
@@ -245,14 +232,14 @@ const HomeScreen = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [loggedInUser, fetchMatchupsFromSheet, fetchAllPicksForUser, calculateAllScores]);
+  }, [loggedInUser, fetchMatchupsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
 
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
         await loadAllScreenData();
       };
-      
+
       fetchData();
 
       return () => {
@@ -265,34 +252,34 @@ const HomeScreen = () => {
     if (allMatchups.length > 0) {
       const currentWeekMatchups = allMatchups.filter(m => m.Week === currentWeek);
       if (currentWeekMatchups.length > 0) {
-          const featured = currentWeekMatchups.reduce((highestScoring, currentMatchup) => {
-              const highestCombinedScore = (highestScoring.HomeTeamProjectedPoints || 0) + (highestScoring.AwayTeamProjectedPoints || 0);
-              const currentCombinedScore = (currentMatchup.HomeTeamProjectedPoints || 0) + (currentMatchup.AwayTeamProjectedPoints || 0);
-              return currentCombinedScore > highestCombinedScore ? currentMatchup : highestScoring;
-          }, currentWeekMatchups[0]);
-          setFeaturedMatchup(featured);
+        const featured = currentWeekMatchups.reduce((highestScoring, currentMatchup) => {
+          const highestCombinedScore = (highestScoring.HomeTeamProjectedPoints || 0) + (highestScoring.AwayTeamProjectedPoints || 0);
+          const currentCombinedScore = (currentMatchup.HomeTeamProjectedPoints || 0) + (currentMatchup.AwayTeamProjectedPoints || 0);
+          return currentCombinedScore > highestCombinedScore ? currentMatchup : highestScoring;
+        }, currentWeekMatchups[0]);
+        setFeaturedMatchup(featured);
       } else {
-          setFeaturedMatchup(null);
+        setFeaturedMatchup(null);
       }
     } else {
-        setFeaturedMatchup(null);
+      setFeaturedMatchup(null);
     }
   }, [currentWeek, allMatchups]);
 
   const handleNavigateToMakePicks = () => {
-    const path = '/(app)/home/makepicks'; 
+    const path = '/appGroup/makepicks';
     console.log(`HomeScreen: Navigating to MakePicks, path: ${path}, params: week ${currentWeek}`);
     router.push({ pathname: path, params: { week: currentWeek } });
   };
 
   const navigateToSettings = () => {
-    const path = '/(app)/home/settings'; 
+    const path = '/appGroup/settings';
     console.log(`HomeScreen: Navigating to Settings, path: ${path}`);
     router.push(path);
   };
 
   const navigateToProfile = () => {
-    const path = '/(app)/home/profile'; 
+    const path = '/appGroup/profile';
     console.log(`HomeScreen: Navigating to Profile, path: ${path}`);
     router.push(path);
   };
@@ -315,22 +302,10 @@ const HomeScreen = () => {
   const listUsers = leaderboardDisplayData.slice(3);    // Ranks 4-12
 
   if (isLoading) { return <View style={homeScreenStyles.centeredFull}><ActivityIndicator size="large" color={PRIMARY_COLOR} /><Text style={homeScreenStyles.loadingText}>Loading Home...</Text></View>; }
-  if (error) { return <View style={homeScreenStyles.centeredFull}><Text style={homeScreenStyles.errorText}>{error}</Text><Button title="Retry" onPress={loadAllScreenData}/></View>; }
+  if (error) { return <View style={homeScreenStyles.centeredFull}><Text style={homeScreenStyles.errorText}>{error}</Text><Button title="Retry" onPress={loadAllScreenData} /></View>; }
 
   return (
     <View style={homeScreenStyles.container}>
-      <View style={homeScreenStyles.header}>
-        <Text style={homeScreenStyles.headerTitle}>The League: Weekly Pick'em</Text>
-        <View style={homeScreenStyles.headerIconsContainer}>
-          <TouchableOpacity onPress={navigateToSettings} style={homeScreenStyles.headerButton}>
-            <Ionicons name="settings-outline" size={26} color={HEADER_ICON_COLOR} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={navigateToProfile} style={homeScreenStyles.headerButton}>
-            <Ionicons name="person-circle-outline" size={30} color={HEADER_ICON_COLOR} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       <ScrollView style={homeScreenStyles.scrollView} contentContainerStyle={homeScreenStyles.scrollViewContent}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, marginBottom: 10 }}>
           <TouchableOpacity onPress={navigateToProfile}>
@@ -359,25 +334,25 @@ const HomeScreen = () => {
 
         <View style={homeScreenStyles.weekNavigation}>
           <TouchableOpacity
-              style={[homeScreenStyles.weekNavButton, (currentWeek === 1 || isLoading) && homeScreenStyles.weekNavButtonDisabled]}
-              onPress={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
-              disabled={currentWeek === 1 || isLoading}
+            style={[homeScreenStyles.weekNavButton, (currentWeek === 1 || isLoading) && homeScreenStyles.weekNavButtonDisabled]}
+            onPress={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
+            disabled={currentWeek === 1 || isLoading}
           >
-              <Ionicons name="chevron-back-outline" size={18} color={TEXT_COLOR_LIGHT} />
-              <Text style={homeScreenStyles.weekNavButtonText}>Prev</Text>
+            <Ionicons name="chevron-back-outline" size={18} color={TEXT_COLOR_LIGHT} />
+            <Text style={homeScreenStyles.weekNavButtonText}>Prev</Text>
           </TouchableOpacity>
 
           <Text style={homeScreenStyles.weekIndicatorText}>Week {currentWeek}</Text>
 
           <TouchableOpacity
-              style={[homeScreenStyles.weekNavButton, (currentWeek >= MAX_WEEKS || isLoading) && homeScreenStyles.weekNavButtonDisabled]}
-              onPress={() => setCurrentWeek(prev => prev + 1)}
-              disabled={currentWeek >= MAX_WEEKS || isLoading}
+            style={[homeScreenStyles.weekNavButton, (currentWeek >= MAX_WEEKS || isLoading) && homeScreenStyles.weekNavButtonDisabled]}
+            onPress={() => setCurrentWeek(prev => prev + 1)}
+            disabled={currentWeek >= MAX_WEEKS || isLoading}
           >
-              <Text style={homeScreenStyles.weekNavButtonText}>Next</Text>
-              <Ionicons name="chevron-forward-outline" size={18} color={TEXT_COLOR_LIGHT} />
+            <Text style={homeScreenStyles.weekNavButtonText}>Next</Text>
+            <Ionicons name="chevron-forward-outline" size={18} color={TEXT_COLOR_LIGHT} />
           </TouchableOpacity>
-      </View>
+        </View>
 
         <TouchableOpacity style={homeScreenStyles.actionCard} onPress={handleNavigateToMakePicks}>
           <View>
@@ -423,101 +398,101 @@ const HomeScreen = () => {
           </View>
         ) : (
           allMatchups.length > 0 &&
-            <View style={homeScreenStyles.featuredMatchupContainer}>
-                <Text style={homeScreenStyles.sectionTitle}>No matchups found for Week {currentWeek}.</Text>
-            </View>
+          <View style={homeScreenStyles.featuredMatchupContainer}>
+            <Text style={homeScreenStyles.sectionTitle}>No matchups found for Week {currentWeek}.</Text>
+          </View>
         )}
 
         {/* Mini Leaderboard Section - NEW PODIUM STYLE */}
         <View style={homeScreenStyles.leaderboardSectionCard}>
-            <Text style={homeScreenStyles.leaderboardSectionTitle}>🏆 Pick'em Standings 🏆</Text>
-            {isLoadingLeaderboard ? (
-                <ActivityIndicator size="large" color={PRIMARY_COLOR} style={{ marginVertical: 30 }}/>
-            ) : leaderboardDisplayData.length > 0 ? (
-                <>
-                    {/* Podium for Top 3 */}
-                    <View style={homeScreenStyles.podiumContainer}>
-                        {/* 2nd Place */}
-                        {podiumUsers[1] && (
-                            <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumSecond]}>
-                                <Link href={{ pathname: '/(app)/home/profile', params: { userId: podiumUsers[1].id } }} asChild>
-                                    <TouchableOpacity>
-                                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarSilver]}>
-                                            {podiumUsers[1].avatarUri ? (
-                                                <Image source={{ uri: podiumUsers[1].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
-                                            ) : (
-                                                <Ionicons name="american-football" size={30} color={TEXT_COLOR_DARK} />
-                                            )}
-                                        </View>
-                                    </TouchableOpacity>
-                                </Link>
-                                <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[1].name}</Text>
-                                <Text style={homeScreenStyles.podiumScore}>{podiumUsers[1].score} pts</Text>
-                                <View style={homeScreenStyles.rankBadgeSilver}><Text style={homeScreenStyles.rankBadgeText}>2nd</Text></View>
-                            </View>
-                        )}
-                        {/* 1st Place */}
-                        {podiumUsers[0] && (
-                            <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumFirst]}>
-                                <Link href={{ pathname: '/(app)/home/profile', params: { userId: podiumUsers[0].id } }} asChild>
-                                    <TouchableOpacity>
-                                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarGold]}>
-                                            {podiumUsers[0].avatarUri ? (
-                                                <Image source={{ uri: podiumUsers[0].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
-                                            ) : (
-                                                <Ionicons name="american-football" size={40} color={TEXT_COLOR_DARK} />
-                                            )}
-                                        </View>
-                                    </TouchableOpacity>
-                                </Link>
-                                <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[0].name}</Text>
-                                <Text style={homeScreenStyles.podiumScore}>{podiumUsers[0].score} pts</Text>
-                                <Ionicons name="trophy" size={30} color={GOLD_COLOR} style={{marginTop: 5}} />
-                            </View>
-                        )}
-                        {/* 3rd Place */}
-                        {podiumUsers[2] && (
-                            <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumThird]}>
-                                <Link href={{ pathname: '/(app)/home/profile', params: { userId: podiumUsers[2].id } }} asChild>
-                                    <TouchableOpacity>
-                                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarBronze]}>
-                                            {podiumUsers[2].avatarUri ? (
-                                                <Image source={{ uri: podiumUsers[2].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
-                                            ) : (
-                                                <Ionicons name="american-football" size={28} color={TEXT_COLOR_DARK} />
-                                            )}
-                                        </View>
-                                    </TouchableOpacity>
-                                </Link>
-                                <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[2].name}</Text>
-                                <Text style={homeScreenStyles.podiumScore}>{podiumUsers[2].score} pts</Text>
-                                <View style={homeScreenStyles.rankBadgeBronze}><Text style={homeScreenStyles.rankBadgeText}>3rd</Text></View>
-                            </View>
-                        )}
-                    </View>
+          <Text style={homeScreenStyles.leaderboardSectionTitle}>🏆 Pick'em Standings 🏆</Text>
+          {isLoadingLeaderboard ? (
+            <ActivityIndicator size="large" color={PRIMARY_COLOR} style={{ marginVertical: 30 }} />
+          ) : leaderboardDisplayData.length > 0 ? (
+            <>
+              {/* Podium for Top 3 */}
+              <View style={homeScreenStyles.podiumContainer}>
+                {/* 2nd Place */}
+                {podiumUsers[1] && (
+                  <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumSecond]}>
+                    <Link href={{ pathname: '/appGroup/profile', params: { userId: podiumUsers[1].id } }} asChild>
+                      <TouchableOpacity>
+                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarSilver]}>
+                          {podiumUsers[1].avatarUri ? (
+                            <Image source={{ uri: podiumUsers[1].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
+                          ) : (
+                            <Ionicons name="american-football" size={30} color={TEXT_COLOR_DARK} />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    </Link>
+                    <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[1].name}</Text>
+                    <Text style={homeScreenStyles.podiumScore}>{podiumUsers[1].score} pts</Text>
+                    <View style={homeScreenStyles.rankBadgeSilver}><Text style={homeScreenStyles.rankBadgeText}>2nd</Text></View>
+                  </View>
+                )}
+                {/* 1st Place */}
+                {podiumUsers[0] && (
+                  <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumFirst]}>
+                    <Link href={{ pathname: '/appGroup/profile', params: { userId: podiumUsers[0].id } }} asChild>
+                      <TouchableOpacity>
+                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarGold]}>
+                          {podiumUsers[0].avatarUri ? (
+                            <Image source={{ uri: podiumUsers[0].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
+                          ) : (
+                            <Ionicons name="american-football" size={40} color={TEXT_COLOR_DARK} />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    </Link>
+                    <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[0].name}</Text>
+                    <Text style={homeScreenStyles.podiumScore}>{podiumUsers[0].score} pts</Text>
+                    <Ionicons name="trophy" size={30} color={GOLD_COLOR} style={{ marginTop: 5 }} />
+                  </View>
+                )}
+                {/* 3rd Place */}
+                {podiumUsers[2] && (
+                  <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumThird]}>
+                    <Link href={{ pathname: '/appGroup/profile', params: { userId: podiumUsers[2].id } }} asChild>
+                      <TouchableOpacity>
+                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarBronze]}>
+                          {podiumUsers[2].avatarUri ? (
+                            <Image source={{ uri: podiumUsers[2].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
+                          ) : (
+                            <Ionicons name="american-football" size={28} color={TEXT_COLOR_DARK} />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    </Link>
+                    <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[2].name}</Text>
+                    <Text style={homeScreenStyles.podiumScore}>{podiumUsers[2].score} pts</Text>
+                    <View style={homeScreenStyles.rankBadgeBronze}><Text style={homeScreenStyles.rankBadgeText}>3rd</Text></View>
+                  </View>
+                )}
+              </View>
 
-                    {/* List for Ranks 4 onwards */}
-                    {listUsers.length > 0 && <Text style={homeScreenStyles.listHeader}>Ranks 4 - {leaderboardDisplayData.length}</Text>}
-                    {listUsers.map((userEntry) => (
-                        <Link key={userEntry.id} href={{ pathname: '/(app)/home/profile', params: { userId: userEntry.id } }} asChild>
-                            <TouchableOpacity style={homeScreenStyles.leaderboardEntryCardList}>
-                                <Text style={homeScreenStyles.leaderboardRankNumberList}>{userEntry.rank}.</Text>
-                                <View style={homeScreenStyles.leaderboardAvatarPlaceholderList}>
-                                    {userEntry.avatarUri ? (
-                                        <Image source={{ uri: userEntry.avatarUri }} style={homeScreenStyles.leaderboardAvatarImageSmall} />
-                                    ) : (
-                                        <Ionicons name="american-football-outline" size={20} color={PRIMARY_COLOR} />
-                                    )}
-                                </View>
-                                <Text style={homeScreenStyles.leaderboardNameList} numberOfLines={1} ellipsizeMode="tail">{userEntry.name}</Text>
-                                <Text style={homeScreenStyles.leaderboardScoreList}>{userEntry.score} pts</Text>
-                            </TouchableOpacity>
-                        </Link>
-                    ))}
-                </>
-            ) : (
-                <Text style={homeScreenStyles.noDataText}>No leaderboard data yet. Be the first!</Text>
-            )}
+              {/* List for Ranks 4 onwards */}
+              {listUsers.length > 0 && <Text style={homeScreenStyles.listHeader}>Ranks 4 - {leaderboardDisplayData.length}</Text>}
+              {listUsers.map((userEntry) => (
+                <Link key={userEntry.id} href={{ pathname: '/appGroup/profile', params: { userId: userEntry.id } }} asChild>
+                  <TouchableOpacity style={homeScreenStyles.leaderboardEntryCardList}>
+                    <Text style={homeScreenStyles.leaderboardRankNumberList}>{userEntry.rank}.</Text>
+                    <View style={homeScreenStyles.leaderboardAvatarPlaceholderList}>
+                      {userEntry.avatarUri ? (
+                        <Image source={{ uri: userEntry.avatarUri }} style={homeScreenStyles.leaderboardAvatarImageSmall} />
+                      ) : (
+                        <Ionicons name="american-football-outline" size={20} color={PRIMARY_COLOR} />
+                      )}
+                    </View>
+                    <Text style={homeScreenStyles.leaderboardNameList} numberOfLines={1} ellipsizeMode="tail">{userEntry.name}</Text>
+                    <Text style={homeScreenStyles.leaderboardScoreList}>{userEntry.score} pts</Text>
+                  </TouchableOpacity>
+                </Link>
+              ))}
+            </>
+          ) : (
+            <Text style={homeScreenStyles.noDataText}>No leaderboard data yet. Be the first!</Text>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -534,26 +509,7 @@ const homeScreenStyles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    backgroundColor: PRIMARY_COLOR,
-    paddingHorizontal: 15,
-    paddingVertical: 15,
-    paddingTop: Platform.select({ android: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 20, ios: 40, default: 20 }),
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: HEADER_ICON_COLOR,
-  },
-  headerIconsContainer: {
-    flexDirection: 'row',
-  },
-  headerButton: {
-    paddingHorizontal: 8,
-  },
+
   scrollView: {
     flex: 1,
   },
@@ -691,8 +647,8 @@ const homeScreenStyles = StyleSheet.create({
     color: ACCENT_COLOR,
     fontWeight: '600',
   },
-  leaderboardSectionCard: { 
-    backgroundColor: CARD_BACKGROUND, 
+  leaderboardSectionCard: {
+    backgroundColor: CARD_BACKGROUND,
     borderRadius: 12,
     paddingVertical: 20,
     paddingHorizontal: 10,
@@ -700,19 +656,19 @@ const homeScreenStyles = StyleSheet.create({
     elevation: 3,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3,
   },
-  leaderboardSectionTitle: { 
-    fontSize: 22, 
+  leaderboardSectionTitle: {
+    fontSize: 22,
     fontWeight: 'bold',
     color: PRIMARY_COLOR,
-    marginBottom: 25, 
+    marginBottom: 25,
     textAlign: 'center',
   },
   podiumContainer: {
     flexDirection: 'row',
     justifyContent: 'center', // Center the podium items
-    alignItems: 'flex-end', 
+    alignItems: 'flex-end',
     marginBottom: 25,
-    minHeight: 180, 
+    minHeight: 180,
   },
   podiumSpot: {
     alignItems: 'center',
@@ -721,21 +677,21 @@ const homeScreenStyles = StyleSheet.create({
     paddingBottom: 10, // Base padding for all spots
   },
   podiumFirst: {
-    order: 2, 
+    order: 2,
     transform: [{ translateY: -20 }], // Elevate 1st place
   },
   podiumSecond: {
-    order: 1, 
+    order: 1,
     paddingTop: 20, // Push down slightly for podium effect
   },
   podiumThird: {
-    order: 3, 
+    order: 3,
     paddingTop: 30, // Push down more for podium effect
   },
-  podiumAvatarContainer: { 
-    width: 70, 
+  podiumAvatarContainer: {
+    width: 70,
     height: 70,
-    borderRadius: 35, 
+    borderRadius: 35,
     backgroundColor: '#E8EAF6', // Lighter grey for avatar background
     justifyContent: 'center',
     alignItems: 'center',
@@ -765,7 +721,7 @@ const homeScreenStyles = StyleSheet.create({
   },
   rankBadgeSilver: { backgroundColor: SILVER_COLOR, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginTop: 4 },
   rankBadgeBronze: { backgroundColor: BRONZE_COLOR, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginTop: 4 },
-  rankBadgeText: { color: TEXT_COLOR_DARK, fontSize: 10, fontWeight: 'bold'},
+  rankBadgeText: { color: TEXT_COLOR_DARK, fontSize: 10, fontWeight: 'bold' },
   listHeader: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -774,40 +730,40 @@ const homeScreenStyles = StyleSheet.create({
     marginBottom: 10,
     paddingLeft: 5,
   },
-  leaderboardEntryCardList: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 10, 
-    paddingHorizontal: 5, 
-    borderTopWidth: 1, 
+  leaderboardEntryCardList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 5,
+    borderTopWidth: 1,
     borderTopColor: '#F0F0F0', // Lighter separator
   },
-  leaderboardRankNumberList: { 
-    fontSize: 14, 
-    fontWeight: '600', 
+  leaderboardRankNumberList: {
+    fontSize: 14,
+    fontWeight: '600',
     color: TEXT_COLOR_DARK, // Darker rank number
     width: 30, // Fixed width for alignment
     textAlign: 'center',
     marginRight: 5,
   },
-  leaderboardAvatarPlaceholderList: { 
-    width: 35, 
-    height: 35, 
-    borderRadius: 17.5, 
-    backgroundColor: '#E8E8E8', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginRight: 10, 
+  leaderboardAvatarPlaceholderList: {
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
+    backgroundColor: '#E8E8E8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
-  leaderboardNameList: { 
-    flex: 1, 
-    fontSize: 15, 
-    color: TEXT_COLOR_DARK, 
+  leaderboardNameList: {
+    flex: 1,
+    fontSize: 15,
+    color: TEXT_COLOR_DARK,
   },
-  leaderboardScoreList: { 
-    fontSize: 15, 
-    fontWeight: 'bold', 
-    color: PRIMARY_COLOR, 
+  leaderboardScoreList: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: PRIMARY_COLOR,
   },
   leaderboardAvatarImage: { // For Podium
     width: '100%',
@@ -846,7 +802,7 @@ const homeScreenStyles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
     backgroundColor: '#F9F9F9',
-    padding:10,
+    padding: 10,
     borderRadius: 8,
   },
   teamLogoCircle: {

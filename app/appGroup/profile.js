@@ -19,9 +19,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams, Link, useFocusEffect } from 'expo-router';
-import { useAuth } from '../../../src/context/AuthContext';
+import { useAuth } from '../../src/context/AuthContext';
 import { doc, getDoc, updateDoc, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { db } from '../../../src/config/firebase';
+import { db } from '../../src/config/firebase';
 import * as Linking from 'expo-linking'; // Ensure Linking is imported
 
 // Colors and Constants
@@ -53,29 +53,10 @@ const MOOD_OPTIONS = [
   { id: 'skeptical', emoji: '🤨', text: 'Not sure about these matchups...' }
 ];
 const DEFAULT_MOOD = MOOD_OPTIONS[0];
-const GOOGLE_SHEETS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY;
-const SPREADSHEET_ID = '1rVuE_BNO9C9M69uZnAHfD5pTI9sno9UXQI4NTDPCQLY';
-const SHEET_NAME_AND_RANGE = '2025Matchups!A:N';
+// --- Configuration ---
+// Removed Google Sheets Config
 
-const parseSheetData = (jsonData) => {
-    if (!jsonData || !Array.isArray(jsonData.values) || jsonData.values.length < 2) {
-      return [];
-    }
-    const [headerRow, ...dataRows] = jsonData.values;
-    const headers = headerRow.map(header => String(header).trim());
-    return dataRows.map(row => {
-      if (!Array.isArray(row)) return null;
-      const entry = {};
-      headers.forEach((header, index) => {
-        const value = (row[index] !== undefined && row[index] !== null) ? String(row[index]).trim() : '';
-        if (value.toUpperCase() === 'TRUE') { entry[header] = true; }
-        else if (value.toUpperCase() === 'FALSE') { entry[header] = false; }
-        else if (!isNaN(Number(value)) && value !== '') { entry[header] = Number(value); }
-        else { entry[header] = value; }
-      });
-      return entry;
-    }).filter(Boolean);
-};
+// parseSheetData removed
 
 // This component is now defined outside to prevent re-creation on every render.
 const ProfileSection = React.memo(({ title, children, iconName, onEditPress, isEditing, isOwnProfile }) => (
@@ -132,7 +113,7 @@ const ProfileScreen = () => {
             if (String(matchup.HomeTeamName || '').trim() === winningTeam) winnerAbbr = String(matchup.HomeTeamAB || '').trim().toUpperCase();
             else if (String(matchup.AwayTeamName || '').trim() === winningTeam) winnerAbbr = String(matchup.AwayTeamAB || '').trim().toUpperCase();
             else winnerAbbr = winningTeam.toUpperCase();
-            
+
             if (userPickForGame.pickedTeamAbbr.toUpperCase() === winnerAbbr) {
               correct++;
             } else {
@@ -146,20 +127,19 @@ const ProfileScreen = () => {
     setUserStats({ correctPicks: correct, incorrectPicks: incorrect, accuracy, gamesGraded: totalPickedAndCompleted });
     setIsLoadingStatsData(false);
   };
-  
-  const fetchMatchupsFromSheet = useCallback(async () => {
-    if (!GOOGLE_SHEETS_API_KEY || GOOGLE_SHEETS_API_KEY.includes('YOUR_GOOGLE_SHEETS_API_KEY')) {
-      throw new Error('API Key is not configured.');
+
+  const fetchMatchupsFromYahoo = useCallback(async () => {
+    try {
+      const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
+      // Fetching "all" matchups for stats.
+      // For MVP, we will fetch just the current week (defaulting to 1).
+      const week = 1;
+      const matchups = await getWeeklyMatchups(week);
+      return matchups;
+    } catch (err) {
+      console.error("Failed to fetch Yahoo matchups:", err);
+      throw err;
     }
-    const encodedSheetNameAndRange = encodeURIComponent(SHEET_NAME_AND_RANGE);
-    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodedSheetNameAndRange}?key=${GOOGLE_SHEETS_API_KEY}`;
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
-    }
-    const jsonData = await response.json();
-    return parseSheetData(jsonData);
   }, []);
 
   // This is the single, orchestrated function to load all data for the screen.
@@ -168,7 +148,7 @@ const ProfileScreen = () => {
       setIsLoading(false);
       return;
     }
-    
+
     console.log(`ProfileScreen: Loading all data for user: ${profileUserId}`);
     setIsLoading(true);
     try {
@@ -176,7 +156,7 @@ const ProfileScreen = () => {
       const commentsCollectionRef = collection(db, "users", profileUserId, "comments");
       const commentsQuery = query(commentsCollectionRef, orderBy('timestamp', 'desc'));
       const usersCollectionRef = collection(db, "users");
-      const allMatchupsPromise = fetchMatchupsFromSheet();
+      const allMatchupsPromise = fetchMatchupsFromYahoo();
       const picksCollectionRef = collection(db, "users", profileUserId, "picks");
       const picksSnapshotPromise = getDocs(picksCollectionRef);
 
@@ -197,28 +177,28 @@ const ProfileScreen = () => {
         // UPDATED: Get avatar URI from Firestore document
         setProfileImageUri(userData.avatarUri || null);
       } else { Alert.alert("Error", "Profile not found."); }
-      
-      const allUsers = (usersSnapshot && Array.isArray(usersSnapshot.docs)) 
-        ? usersSnapshot.docs.map(doc => doc.data()) 
+
+      const allUsers = (usersSnapshot && Array.isArray(usersSnapshot.docs))
+        ? usersSnapshot.docs.map(doc => doc.data())
         : [];
       const userMap = new Map(allUsers.map(u => [u.uid, u]));
 
       const fetchedComments = commentsSnapshot.docs.map(doc => {
-          const commentData = { id: doc.id, ...doc.data() };
-          const author = userMap.get(commentData.authorId);
-          // Get the author's avatar from the map we already created
-          return { ...commentData, authorAvatarUri: author?.avatarUri || null };
+        const commentData = { id: doc.id, ...doc.data() };
+        const author = userMap.get(commentData.authorId);
+        // Get the author's avatar from the map we already created
+        return { ...commentData, authorAvatarUri: author?.avatarUri || null };
       });
-      
+
       setComments(fetchedComments);
       setLeagueMates(allUsers.filter(u => u.uid !== profileUserId));
 
       let allPicksForUser = [];
       picksSnapshot.forEach((weekDoc) => {
-          const weekPicks = weekDoc.data();
-          for (const gameUniqueID in weekPicks) {
-              allPicksForUser.push({ gameUniqueID, pickedTeamAbbr: weekPicks[gameUniqueID] });
-          }
+        const weekPicks = weekDoc.data();
+        for (const gameUniqueID in weekPicks) {
+          allPicksForUser.push({ gameUniqueID, pickedTeamAbbr: weekPicks[gameUniqueID] });
+        }
       });
       calculateStats(allMatchups, allPicksForUser);
 
@@ -228,7 +208,7 @@ const ProfileScreen = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [profileUserId, fetchMatchupsFromSheet]);
+  }, [profileUserId, fetchMatchupsFromYahoo]);
 
   // CORRECTED: useFocusEffect now calls the async function inside a standard function
   useFocusEffect(
@@ -236,7 +216,7 @@ const ProfileScreen = () => {
       const fetchData = () => {
         loadAllData();
       };
-      
+
       fetchData();
 
       return () => {
@@ -245,7 +225,7 @@ const ProfileScreen = () => {
       };
     }, [loadAllData])
   );
-  
+
   const handlePickImage = async () => {
     if (!isOwnProfile || !profileUserId) return;
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -267,7 +247,7 @@ const ProfileScreen = () => {
       } catch (e) {
         console.error("Failed to save profile image URI to Firestore:", e);
         Alert.alert("Error", "Could not save profile picture.");
-        setProfileImageUri(profileData.avatarUri || null); 
+        setProfileImageUri(profileData.avatarUri || null);
       }
     }
   };
@@ -312,7 +292,8 @@ const ProfileScreen = () => {
       setNewComment('');
       Alert.alert("Success", "Your comment has been posted!");
       loadAllData();
-    } catch (e) { console.error("Failed to add comment:", e);
+    } catch (e) {
+      console.error("Failed to add comment:", e);
       Alert.alert("Error", "Could not post your comment.");
     }
   };
@@ -329,12 +310,12 @@ const ProfileScreen = () => {
         <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_LIGHT} />
+            <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_LIGHT} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{profileData.username || profileData.name}'s </Text>
           <View style={styles.headerSpacer} />
         </View>
-        <ScrollView style={styles.scrollView} contentContainerStyle={{paddingBottom: 20}} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
           <View style={styles.profileHeader}>
             <TouchableOpacity onPress={handlePickImage} disabled={!isOwnProfile} style={styles.profilePicContainer}>
               {profileImageUri ? (
@@ -344,7 +325,7 @@ const ProfileScreen = () => {
               )}
               {isOwnProfile && (
                 <View style={styles.editIconOverlay}>
-                    <Ionicons name="camera-outline" size={20} color={TEXT_COLOR_LIGHT} />
+                  <Ionicons name="camera-outline" size={20} color={TEXT_COLOR_LIGHT} />
                 </View>
               )}
             </TouchableOpacity>
@@ -352,37 +333,37 @@ const ProfileScreen = () => {
             <Text style={styles.profileUsername}>"{profileData.username}"</Text>
             <View style={styles.moodContainer}>
               {isEditingMood && isOwnProfile ? (
-                  <TouchableOpacity style={[styles.actionButton, styles.cancelButton, styles.moodEditToggleButton]} onPress={() => setIsEditingMood(false)}>
-                      <Text style={styles.actionButtonText}>Done</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionButton, styles.cancelButton, styles.moodEditToggleButton]} onPress={() => setIsEditingMood(false)}>
+                  <Text style={styles.actionButtonText}>Done</Text>
+                </TouchableOpacity>
               ) : (
-                  <TouchableOpacity style={styles.moodDisplay} onPress={() => isOwnProfile && setIsEditingMood(true)} disabled={!isOwnProfile}>
-                      <Text style={styles.profileStatus}>Mood: {currentMood.emoji} {currentMood.text}</Text>
-                      {isOwnProfile && <Ionicons name="pencil-outline" size={16} color={MYSPACE_PINK_ACCENT} style={{marginLeft: 5}}/>}
-                  </TouchableOpacity>
+                <TouchableOpacity style={styles.moodDisplay} onPress={() => isOwnProfile && setIsEditingMood(true)} disabled={!isOwnProfile}>
+                  <Text style={styles.profileStatus}>Mood: {currentMood.emoji} {currentMood.text}</Text>
+                  {isOwnProfile && <Ionicons name="pencil-outline" size={16} color={MYSPACE_PINK_ACCENT} style={{ marginLeft: 5 }} />}
+                </TouchableOpacity>
               )}
             </View>
           </View>
 
           {isEditingMood && isOwnProfile && (
-              <View style={styles.moodSelectorContainer}>
-                  <Text style={styles.moodSelectorTitle}>Select Your Mood:</Text>
-                  {MOOD_OPTIONS.map(mood => (
-                      <TouchableOpacity key={mood.id} style={styles.moodOption} onPress={() => handleSelectMood(mood)}>
-                          <Text style={styles.moodOptionText}>{mood.emoji} {mood.text}</Text>
-                      </TouchableOpacity>
-                  ))}
-              </View>
+            <View style={styles.moodSelectorContainer}>
+              <Text style={styles.moodSelectorTitle}>Select Your Mood:</Text>
+              {MOOD_OPTIONS.map(mood => (
+                <TouchableOpacity key={mood.id} style={styles.moodOption} onPress={() => handleSelectMood(mood)}>
+                  <Text style={styles.moodOptionText}>{mood.emoji} {mood.text}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           )}
 
           <View style={styles.mainContent}>
             <View style={styles.leftColumn}>
-              <ProfileSection 
-                  title="About Me" 
-                  iconName="information-circle-outline"
-                  onEditPress={() => setIsEditingAboutMe(!isEditingAboutMe)}
-                  isEditing={isEditingAboutMe}
-                  isOwnProfile={isOwnProfile}
+              <ProfileSection
+                title="About Me"
+                iconName="information-circle-outline"
+                onEditPress={() => setIsEditingAboutMe(!isEditingAboutMe)}
+                isEditing={isEditingAboutMe}
+                isOwnProfile={isOwnProfile}
               >
                 {isEditingAboutMe ? (
                   <>
@@ -406,7 +387,7 @@ const ProfileScreen = () => {
               </ProfileSection>
 
               <ProfileSection title="My Pick Stats" iconName="stats-chart-outline">
-                {isLoadingStatsData ? ( 
+                {isLoadingStatsData ? (
                   <ActivityIndicator size="small" color={PRIMARY_COLOR} />
                 ) : (
                   <>
@@ -414,7 +395,7 @@ const ProfileScreen = () => {
                     <Text style={styles.statsText}>Incorrect Picks: {userStats.incorrectPicks}</Text>
                     <Text style={styles.statsText}>Games Graded: {userStats.gamesGraded}</Text>
                     <Text style={styles.statsText}>
-                        Pick Accuracy: {userStats.accuracy.toFixed(1)}%
+                      Pick Accuracy: {userStats.accuracy.toFixed(1)}%
                     </Text>
                   </>
                 )}
@@ -428,21 +409,21 @@ const ProfileScreen = () => {
               <ProfileSection title="Managers" iconName="people-outline">
                 {leagueMates.length > 0 ? leagueMates.slice(0, 12).map(mate => (
                   <Link key={mate.uid} href={{ pathname: '/(app)/home/profile', params: { userId: mate.uid } }} asChild>
-                      <TouchableOpacity style={styles.friendItemContainer}>
-                          <Ionicons name="person-outline" size={16} color={MYSPACE_BLUE_ACCENT} style={{marginRight: 5}}/>
-                          <Text style={styles.friendItem}>{mate.name || mate.username}</Text>
-                      </TouchableOpacity>
+                    <TouchableOpacity style={styles.friendItemContainer}>
+                      <Ionicons name="person-outline" size={16} color={MYSPACE_BLUE_ACCENT} style={{ marginRight: 5 }} />
+                      <Text style={styles.friendItem}>{mate.name || mate.username}</Text>
+                    </TouchableOpacity>
                   </Link>
                 )) : <Text style={styles.smallTextMuted}>No other managers found.</Text>}
                 {leagueMates.length > 8 && <Text style={styles.linkText}>...and more!</Text>}
               </ProfileSection>
 
-               <ProfileSection title="The League Record" iconName="football-outline">
-                <TouchableOpacity 
+              <ProfileSection title="The League Record" iconName="football-outline">
+                <TouchableOpacity
                   style={styles.yahooLinkButton}
                   onPress={() => Linking.openURL('https://football.fantasysports.yahoo.com/f1/66645?lhst=stand#leaguehomestandings')}
                 >
-                  <Ionicons name="logo-yahoo" size={30} color={TEXT_COLOR_LIGHT} style={{marginRight: 8}}/>
+                  <Ionicons name="logo-yahoo" size={30} color={TEXT_COLOR_LIGHT} style={{ marginRight: 8 }} />
                   <Text style={styles.yahooLinkButtonText}>View on Y!</Text>
                 </TouchableOpacity>
               </ProfileSection>
@@ -450,41 +431,41 @@ const ProfileScreen = () => {
           </View>
 
           <View style={styles.footerCommentSection}>
-              <Text style={styles.sectionTitle}>Public Post / Smack Talk</Text>
-              <TextInput
-                  style={[styles.textInput, styles.commentInput]}
-                  placeholder={`Leave a comment for ${profileData.name || 'this user'}...`}
-                  value={newComment}
-                  onChangeText={setNewComment}
-                  multiline={true}
-              />
-              <TouchableOpacity style={[styles.actionButton, styles.postButton]} onPress={handleAddComment}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={16} color={TEXT_COLOR_LIGHT} style={{marginRight: 5}}/>
-                  <Text style={styles.actionButtonText}>Post Comment</Text>
-              </TouchableOpacity>
-              <View style={styles.commentsList}>
-                  {comments.length > 0 ? comments.map(comment => { 
-                      const timestamp = comment.timestamp ? new Date(comment.timestamp.toDate()).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '...';
-                      return (
-                          <View key={comment.id} style={styles.commentItem}>
-                              <View style={styles.commentHeader}>
-                                  <View style={styles.commentAvatar}>
-                                    {comment.authorAvatarUri ? (
-                                        <Image source={{ uri: comment.authorAvatarUri }} style={styles.commentAvatarImage} />
-                                    ) : (
-                                        <Ionicons name="person-circle" size={32} color={PRIMARY_COLOR} />
-                                    )}
-                                  </View>
-                                  <View style={styles.commentAuthorInfo}>
-                                      <Text style={styles.commentAuthor}>{comment.authorName}</Text>
-                                      <Text style={styles.commentTimestamp}>{timestamp}</Text>
-                                  </View>
-                              </View>
-                              <Text style={styles.commentText}>{comment.text}</Text>
-                          </View>
-                      )
-                  }) : <Text style={styles.smallTextMuted}>No comments yet. Be the first!</Text>}
-              </View>
+            <Text style={styles.sectionTitle}>Public Post / Smack Talk</Text>
+            <TextInput
+              style={[styles.textInput, styles.commentInput]}
+              placeholder={`Leave a comment for ${profileData.name || 'this user'}...`}
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline={true}
+            />
+            <TouchableOpacity style={[styles.actionButton, styles.postButton]} onPress={handleAddComment}>
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={TEXT_COLOR_LIGHT} style={{ marginRight: 5 }} />
+              <Text style={styles.actionButtonText}>Post Comment</Text>
+            </TouchableOpacity>
+            <View style={styles.commentsList}>
+              {comments.length > 0 ? comments.map(comment => {
+                const timestamp = comment.timestamp ? new Date(comment.timestamp.toDate()).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '...';
+                return (
+                  <View key={comment.id} style={styles.commentItem}>
+                    <View style={styles.commentHeader}>
+                      <View style={styles.commentAvatar}>
+                        {comment.authorAvatarUri ? (
+                          <Image source={{ uri: comment.authorAvatarUri }} style={styles.commentAvatarImage} />
+                        ) : (
+                          <Ionicons name="person-circle" size={32} color={PRIMARY_COLOR} />
+                        )}
+                      </View>
+                      <View style={styles.commentAuthorInfo}>
+                        <Text style={styles.commentAuthor}>{comment.authorName}</Text>
+                        <Text style={styles.commentTimestamp}>{timestamp}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.commentText}>{comment.text}</Text>
+                  </View>
+                )
+              }) : <Text style={styles.smallTextMuted}>No comments yet. Be the first!</Text>}
+            </View>
           </View>
         </ScrollView>
       </View>
@@ -555,7 +536,7 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: (width * 0.35) / 8 - 3,
   },
-  editIconOverlay:{
+  editIconOverlay: {
     position: 'absolute',
     bottom: 5,
     right: 5,

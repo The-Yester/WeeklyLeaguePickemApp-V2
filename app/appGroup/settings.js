@@ -16,11 +16,11 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link } from 'expo-router';
-import { useAuth } from '../../../src/context/AuthContext'; // Adjust path if your context file is elsewhere
+import { useAuth } from '../../src/context/AuthContext'; // Adjust path if your context file is elsewhere
 import * as Notifications from 'expo-notifications'; // Import expo-notifications
 import { deleteUser } from "firebase/auth";
 import { doc, deleteDoc, collection, getDocs } from "firebase/firestore";
-import { auth, db } from '../../../src/config/firebase'; // Adjust path if needed
+import { auth, db } from '../../src/config/firebase'; // Adjust path if needed
 
 // Colors
 const PRIMARY_COLOR = '#1f366a';
@@ -118,8 +118,8 @@ const SettingsScreen = () => {
             setProfileImageUri(null);
           }
         } catch (e) {
-            console.error("Failed to load profile image:", e);
-            setProfileImageUri(null);
+          console.error("Failed to load profile image:", e);
+          setProfileImageUri(null);
         }
       }
     };
@@ -145,7 +145,7 @@ const SettingsScreen = () => {
             content: {
               title: `🏈 Week ${weekSchedule.week} Pick'em Reminder!`,
               body: `Don't forget! Picks lock in about 1 hour.`,
-              data: { screen: 'makepicks', week: weekSchedule.week }, 
+              data: { screen: 'makepicks', week: weekSchedule.week },
             },
             trigger: reminderDateTime,
             identifier: notificationId,
@@ -169,20 +169,20 @@ const SettingsScreen = () => {
   const handleReminderToggle = async (value) => {
     setArePickRemindersEnabled(value);
     try {
-        await AsyncStorage.setItem('pickReminderEnabled', value.toString());
-        if (value) {
-            Alert.alert("Reminder Preference Saved", "Pick deadline reminder preference is ON.");
-        } else {
-            Alert.alert("Reminder Preference Saved", "Pick deadline reminder preference is OFF.");
-        }
+      await AsyncStorage.setItem('pickReminderEnabled', value.toString());
+      if (value) {
+        Alert.alert("Reminder Preference Saved", "Pick deadline reminder preference is ON.");
+      } else {
+        Alert.alert("Reminder Preference Saved", "Pick deadline reminder preference is OFF.");
+      }
     } catch (e) {
-        console.error("Failed to save reminder preference:", e);
-        Alert.alert("Error", "Could not save reminder preference.");
+      console.error("Failed to save reminder preference:", e);
+      Alert.alert("Error", "Could not save reminder preference.");
     }
   };
 
   const handleLogoutPress = () => {
-    Alert.alert( "Logout", "Are you sure you want to log out?",
+    Alert.alert("Logout", "Are you sure you want to log out?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -224,7 +224,7 @@ const SettingsScreen = () => {
               // This is important as Firestore doesn't automatically delete subcollections.
               const picksCollectionRef = collection(db, "users", firebaseUser.uid, "picks");
               const commentsCollectionRef = collection(db, "users", firebaseUser.uid, "comments");
-              
+
               const picksSnapshot = await getDocs(picksCollectionRef);
               for (const doc of picksSnapshot.docs) {
                 await deleteDoc(doc.ref);
@@ -266,37 +266,37 @@ const SettingsScreen = () => {
 
   const SettingItem = ({ iconName, title, onPress, href, isDestructive = false, hasSwitch = false, switchValue, onSwitchValueChange }) => {
     const content = (
-        <>
-            <Ionicons name={iconName} size={24} color={isDestructive ? DANGER_COLOR : LIST_ITEM_ICON_COLOR} style={styles.settingIcon} />
-            <Text style={[styles.settingText, isDestructive && styles.destructiveText]}>{title}</Text>
-            {hasSwitch ? (
-            <Switch
-                trackColor={{ false: SWITCH_TRACK_COLOR_FALSE, true: SWITCH_TRACK_COLOR_TRUE }}
-                thumbColor={Platform.OS === 'ios' ? SWITCH_THUMB_COLOR_IOS : (switchValue ? PRIMARY_COLOR : '#f4f3f4')}
-                ios_backgroundColor={SWITCH_TRACK_COLOR_FALSE}
-                onValueChange={onSwitchValueChange}
-                value={switchValue}
-            />
-            ) : ( !isDestructive && <Ionicons name="chevron-forward-outline" size={22} color="#C7C7CC" /> )}
-        </>
+      <>
+        <Ionicons name={iconName} size={24} color={isDestructive ? DANGER_COLOR : LIST_ITEM_ICON_COLOR} style={styles.settingIcon} />
+        <Text style={[styles.settingText, isDestructive && styles.destructiveText]}>{title}</Text>
+        {hasSwitch ? (
+          <Switch
+            trackColor={{ false: SWITCH_TRACK_COLOR_FALSE, true: SWITCH_TRACK_COLOR_TRUE }}
+            thumbColor={Platform.OS === 'ios' ? SWITCH_THUMB_COLOR_IOS : (switchValue ? PRIMARY_COLOR : '#f4f3f4')}
+            ios_backgroundColor={SWITCH_TRACK_COLOR_FALSE}
+            onValueChange={onSwitchValueChange}
+            value={switchValue}
+          />
+        ) : (!isDestructive && <Ionicons name="chevron-forward-outline" size={22} color="#C7C7CC" />)}
+      </>
     );
 
     if (href) {
-        return (
-            <Link href={href} asChild>
-                <TouchableOpacity style={styles.settingItem} activeOpacity={0.7}>
-                    {content}
-                </TouchableOpacity>
-            </Link>
-        );
+      return (
+        <Link href={href} asChild>
+          <TouchableOpacity style={styles.settingItem} activeOpacity={0.7}>
+            {content}
+          </TouchableOpacity>
+        </Link>
+      );
     }
 
     return (
-        <TouchableOpacity style={styles.settingItem} onPress={onPress} activeOpacity={hasSwitch ? 1 : 0.2}>
-            {content}
-        </TouchableOpacity>
+      <TouchableOpacity style={styles.settingItem} onPress={onPress} activeOpacity={hasSwitch ? 1 : 0.2}>
+        {content}
+      </TouchableOpacity>
     );
-};
+  };
 
 
   return (
@@ -304,7 +304,7 @@ const SettingsScreen = () => {
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_LIGHT} />
+          <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_LIGHT} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={styles.headerSpacer} />
@@ -326,14 +326,14 @@ const SettingsScreen = () => {
 
         <Text style={styles.sectionHeader}>Account</Text>
         <View style={styles.section}>
-          <SettingItem 
-            iconName="person-outline" 
-            title="Edit Profile" 
+          <SettingItem
+            iconName="person-outline"
+            title="Edit Profile"
             href="./profile"
           />
-          <SettingItem 
-            iconName="lock-closed-outline" 
-            title="Change Password" 
+          <SettingItem
+            iconName="lock-closed-outline"
+            title="Change Password"
             href="./changePassword"
           />
         </View>
@@ -356,7 +356,7 @@ const SettingsScreen = () => {
           <SettingItem iconName="shield-checkmark-outline" title="Privacy Policy" onPress={() => Linking.openURL('https://yourwebsite.com/privacy').catch(err => console.error("Couldn't load page", err))} />
         </View>
 
-        <View style={[styles.section, {marginTop: 20}]}>
+        <View style={[styles.section, { marginTop: 20 }]}>
           <SettingItem iconName="log-out-outline" title="Logout" onPress={handleLogoutPress} isDestructive />
         </View>
 
@@ -365,7 +365,7 @@ const SettingsScreen = () => {
           <SettingItem iconName="trash-outline" title="Delete Account" onPress={handleDeleteAccount} isDestructive />
         </View>
         <Text style={styles.dangerZoneText}>
-            Account deletion is permanent and cannot be undone.
+          Account deletion is permanent and cannot be undone.
         </Text>
 
       </ScrollView>
@@ -375,35 +375,35 @@ const SettingsScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f2f5', },
-  header: { 
-    backgroundColor: PRIMARY_COLOR, 
-    paddingHorizontal: 15, 
-    paddingVertical: 15, 
-    paddingTop: Platform.select({ android: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 20, ios: 40, default: 20 }), 
+  header: {
+    backgroundColor: PRIMARY_COLOR,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+    paddingTop: Platform.select({ android: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 20, ios: 40, default: 20 }),
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between', 
+    justifyContent: 'space-between',
   },
   backButton: {
     padding: 5,
   },
-  headerTitle: { 
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    color: TEXT_COLOR_LIGHT, 
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: TEXT_COLOR_LIGHT,
   },
   headerSpacer: {
     width: 28 + 10,
   },
   scrollView: { flex: 1, },
   profileHeader: { alignItems: 'center', paddingVertical: 20, backgroundColor: CARD_BACKGROUND, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
-  avatarPlaceholder: { 
-    width: 80, 
-    height: 80, 
-    borderRadius: 40, 
-    backgroundColor: '#e0e0e0', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
+  avatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 10,
     overflow: 'hidden',
   },
