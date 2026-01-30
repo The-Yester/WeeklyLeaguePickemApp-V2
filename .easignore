@@ -1,0 +1,9 @@
+.expo/
+node_modules/
+npm-debug.log
+yarn-error.log
+.git/
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
