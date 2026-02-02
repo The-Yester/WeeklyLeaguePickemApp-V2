@@ -27,7 +27,7 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
+        foregroundImage: "./assets/images/adaptive-icon.png",
         backgroundColor: "#ffffff"
       },
       package: "com.ryester.WeeklyLeaguePickemApp",
@@ -37,13 +37,12 @@ export default {
           action: "VIEW",
           data: {
             scheme: "weeklyleaguepickemapp",
-            host: "authGroup",
-            pathPrefix: "/callback"
+            host: "yahoo" // Optional: adds specificity, e.g., weeklyleaguepickemapp://yahoo
           },
           category: ["BROWSABLE", "DEFAULT"]
         }
       ],
-      jsEngine: "jsc"
+      jsEngine: "jsc",
     },
     platforms: ["ios", "android", "web"],
     plugins: [

@@ -63,7 +63,7 @@ const screenWidth = Dimensions.get("window").width;
 // parseSheetData removed
 
 const StatsScreen = () => {
-  const { user } = useAuth();
+  const { user, leagueKey } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -212,13 +212,17 @@ const StatsScreen = () => {
 
       // Let's fetch the requested week first.
 
-      const matchups = await getWeeklyMatchups(currentWeek);
+      if (!leagueKey) {
+        console.log('Stats: No leagueKey available.');
+        return [];
+      }
+      const matchups = await getWeeklyMatchups(currentWeek, leagueKey);
       return matchups;
     } catch (err) {
       console.error("Failed to fetch Yahoo matchups:", err);
       throw err;
     }
-  }, [currentWeek]);
+  }, [currentWeek, leagueKey]);
 
   const pieChartData = loggedInUserStats.correct + loggedInUserStats.incorrect > 0 ? [
     { name: 'Correct', population: loggedInUserStats.correct, color: CHART_COLOR_CORRECT, legendFontColor: TEXT_COLOR_DARK, legendFontSize: 14 },

@@ -4,6 +4,7 @@ import { useRouter, useSegments, SplashScreen } from 'expo-router';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut, signInAnonymously } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import * as SecureStore from 'expo-secure-store';
 
 const AuthContext = createContext(null);
 
@@ -21,6 +22,7 @@ export function AuthProvider({ children }) {
     const [accessToken, setAccessToken] = useState(null);
     const [refreshToken, setRefreshToken] = useState(null);
     const [inAuthGroup, setInAuthGroup] = useState(false);
+    const [leagueKey, setLeagueKey] = useState(null); // [NEW] Store connected league key
     const segments = useSegments();
     const router = useRouter();
 
@@ -35,29 +37,36 @@ export function AuthProvider({ children }) {
 
                     if (userDoc.exists()) {
                         const userProfile = userDoc.data();
-                        setUser(userProfile);
-                        await AsyncStorage.setItem('currentUser', JSON.stringify(userProfile));
-                        console.log('AuthProvider: User profile loaded and set.', userProfile.username);
+                        setUser({ uid: firebaseUser.uid, ...userProfile });
+                        await AsyncStorage.setItem('currentUser', JSON.stringify({ uid: firebaseUser.uid, ...userProfile }));
+
+                        // [NEW] Load leagueKey if exists
+                        if (userProfile.leagueKey) {
+                            setLeagueKey(userProfile.leagueKey);
+                            await AsyncStorage.setItem('leagueKey', userProfile.leagueKey);
+                        } else {
+                            // Check async storage backup?
+                            const stored = await AsyncStorage.getItem('leagueKey');
+                            if (stored) setLeagueKey(stored);
+                        }
+
+                        console.log('AuthProvider: User profile loaded.', userProfile.username);
                     } else {
                         console.warn('AuthProvider: Firebase user exists, but no profile found in Firestore.');
-                        setUser({ uid: firebaseUser.uid, username: 'Anonymous' });
+                        // If no profile, we treat as logged out or prompt creation?
+                        // For now, let's just log out or set user undefined to force login
+                        // actually, the user IS authenticated with Firebase, just missing profile.
+                        // We should let them be "user" but perhaps redirect to setup?
+                        // Let's set user to a minimal object
+                        setUser({ uid: firebaseUser.uid, username: 'New User' });
                     }
                 } catch (e) {
                     console.error('AuthProvider: Error fetching user profile:', e);
-                    setUser({ uid: firebaseUser.uid, username: 'Anonymous' });
-                }
-            } else {
-                console.log('AuthProvider: No Firebase user found. Signing in anonymously…');
-
-                try {
-                    const { user: anonUser } = await signInAnonymously(auth);
-                    console.log('✅ Anonymous Firebase UID:', anonUser.uid);
-                    console.log('⚠️ No Firestore profile found. Using anonymous fallback.');
-                    setUser({ uid: anonUser.uid, username: 'Anonymous' });
-                } catch (err) {
-                    console.error('❌ Anonymous sign-in failed:', err);
                     setUser(undefined);
                 }
+            } else {
+                console.log('AuthProvider: No Firebase user found.');
+                setUser(undefined);
             }
 
             setIsLoading(false);
@@ -76,7 +85,13 @@ export function AuthProvider({ children }) {
         setInAuthGroup(isInAuthGroup);
         console.log(`AuthProvider (redirect effect): User: ${user?.username ?? 'null'}, InAuthGroup: ${isInAuthGroup}`);
 
-        if (user && isInAuthGroup) {
+        if (user && isInAuthGroup && user.username !== 'Anonymous') {
+            // [NEW] Check if league is setup
+            // logic moved to redirect effect below or handled by protected layout?
+            // For now, prevent immediate redirect if league is missing? 
+            // Actually, we'll let Home redirect to Setup, or handle it here.
+
+            // Let's modify: If ready, go home.
             router.replace('/appGroup/home');
         } else if (!user && !isInAuthGroup) {
             console.log('🔀 Redirecting to login screen...');
@@ -90,11 +105,11 @@ export function AuthProvider({ children }) {
         try {
             await AsyncStorage.setItem('currentUser', JSON.stringify(userData));
             if (yahooAccessToken) {
-                await AsyncStorage.setItem('yahoo_access_token', yahooAccessToken);
+                await SecureStore.setItemAsync('yahoo_access_token', yahooAccessToken);
                 setAccessToken(yahooAccessToken);
             }
             if (yahooRefreshToken) {
-                await AsyncStorage.setItem('yahoo_refresh_token', yahooRefreshToken);
+                await SecureStore.setItemAsync('yahoo_refresh_token', yahooRefreshToken);
                 setRefreshToken(yahooRefreshToken);
             }
             setUser(userData);
@@ -107,8 +122,8 @@ export function AuthProvider({ children }) {
     const signOut = async () => {
         try {
             await firebaseSignOut(auth);
-            await AsyncStorage.removeItem('yahoo_access_token');
-            await AsyncStorage.removeItem('yahoo_refresh_token');
+            await SecureStore.deleteItemAsync('yahoo_access_token');
+            await SecureStore.deleteItemAsync('yahoo_refresh_token');
             setAccessToken(null);
             setRefreshToken(null);
         } catch (e) {
@@ -118,14 +133,27 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const loadTokens = async () => {
-            const storedAccessToken = await AsyncStorage.getItem('yahoo_access_token');
-            const storedRefreshToken = await AsyncStorage.getItem('yahoo_refresh_token');
+            let storedAccessToken = await SecureStore.getItemAsync('yahoo_access_token');
+            let storedRefreshToken = await SecureStore.getItemAsync('yahoo_refresh_token');
+
+            // MIGRATION: Check AsyncStorage if not in SecureStore
+            if (!storedAccessToken) {
+                storedAccessToken = await AsyncStorage.getItem('yahoo_access_token');
+                if (storedAccessToken) await SecureStore.setItemAsync('yahoo_access_token', storedAccessToken);
+            }
+            if (!storedRefreshToken) {
+                storedRefreshToken = await AsyncStorage.getItem('yahoo_refresh_token');
+                if (storedRefreshToken) await SecureStore.setItemAsync('yahoo_refresh_token', storedRefreshToken);
+            }
+
             if (storedAccessToken) {
                 setAccessToken(storedAccessToken);
             }
             if (storedRefreshToken) {
                 setRefreshToken(storedRefreshToken);
             }
+            const storedLeagueKey = await AsyncStorage.getItem('leagueKey');
+            if (storedLeagueKey) setLeagueKey(storedLeagueKey);
         };
         loadTokens();
     }, []);
@@ -141,6 +169,8 @@ export function AuthProvider({ children }) {
                 isLoadingAuth: isLoading,
                 inAuthGroup,
                 setAccessToken,
+                leagueKey, // [NEW]
+                setLeagueKey // [NEW]
             }}
         >
             {children}

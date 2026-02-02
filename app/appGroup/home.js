@@ -6,41 +6,35 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
-  Platform,
   StatusBar,
   ActivityIndicator,
   Alert,
   Button,
-  Image
+  Image,
+  RefreshControl
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link, useFocusEffect } from 'expo-router';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../src/context/AuthContext';
-import { db } from '../../src/config/firebase'; // Adjust this path if needed
+import { db } from '../../src/config/firebase';
 
-const ArrowRightIcon = () => <Text style={{ color: 'white', fontSize: 16 }}>GAME ON! ➤</Text>;
+const ArrowRightIcon = () => <Text style={{ color: '#0D1B2A', fontSize: 16, fontWeight: 'bold' }}>GAME ON! ➤</Text>;
 
-// Colors
-const PRIMARY_COLOR = '#1f366a';
-const SECONDARY_COLOR = 'green';
-const ACCENT_COLOR = '#FF9800';
-const HEADER_ICON_COLOR = '#FFFFFF';
-const TEXT_COLOR_DARK = '#333333';
-const TEXT_COLOR_LIGHT = '#FFFFFF';
-const GOLD_COLOR = '#FFC107'; // Brighter Gold
+// --- THEME COLORS (Navy / Cyan / Green) ---
+const PRIMARY_COLOR = '#0D1B2A';    // Deep Navy Background
+const SECONDARY_COLOR = '#00E5FF';  // Cyan (Accents, Buttons)
+const ACCENT_COLOR = '#00E676';     // Green (Highlights, Success)
+const CARD_BACKGROUND = '#1B263B';  // Lighter Navy for Cards
+const TEXT_COLOR_MAIN = '#FFFFFF';  // White text for dark mode
+const TEXT_COLOR_SUB = '#B0BEC5';   // Light Grey for subtitles
+const GOLD_COLOR = '#FFD700';
 const SILVER_COLOR = '#C0C0C0';
-const BRONZE_COLOR = '#CD7F32'; // Standard Bronze
-const CARD_BACKGROUND = '#FFFFFF';
-const BORDER_COLOR = '#E0E0E0';
-const PODIUM_TEXT_COLOR = '#424242'; // Dark grey for podium text
+const BRONZE_COLOR = '#CD7F32';
 
 // --- Configuration for Yahoo Fantasy API ---
-// Removed Google Sheets Config
-// const SPREADSHEET_ID = '...';
-// const SHEET_NAME_AND_RANGE = '...';
-const MAX_WEEKS = 18; // Define the maximum week number
+const MAX_WEEKS = 18;
 
 // --- Weekly Picks Lock Schedule ---
 // This schedule will now be used to determine the current week automatically.
@@ -86,49 +80,48 @@ const getInitialWeek = () => {
 
 const HomeScreen = () => {
   const router = useRouter();
-  const { user: loggedInUser } = useAuth(); // Get user from context
+  const { user: loggedInUser, leagueKey } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  const [profileImageUri, setProfileImageUri] = useState(null); // State for profile image
+  const [profileImageUri, setProfileImageUri] = useState(null);
   const [allMatchups, setAllMatchups] = useState([]);
   const [featuredMatchup, setFeaturedMatchup] = useState(null);
   const [totalUserScore, setTotalUserScore] = useState(0);
   const [leaderboardDisplayData, setLeaderboardDisplayData] = useState([]);
+  const [leagueStandings, setLeagueStandings] = useState([]); // [NEW] W-L records
   const [currentWeek, setCurrentWeek] = useState(() => getInitialWeek());
 
   const [isProcessingScore, setIsProcessingScore] = useState(false);
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(true);
 
-
-  // Helper functions are defined outside the data loading flow.
-  // Helper functions are defined outside the data loading flow.
+  // Fetch Matchups
   const fetchMatchupsFromYahoo = useCallback(async () => {
     try {
       const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
-      // Fetch ALL matchups? Or just current week?
-      // The original app fetched ALL rows from the sheet (A:N).
-      // Yahoo API is week-based.
-      // For the home screen, we need "current week" mostly, but "stats" needs all.
-      // Leaderboard needs "all past weeks".
-
-      // This is tricky. Yahoo API doesn't give "all season matchups" in one call easily.
-      // We might need to fetch current week for display.
-      // For Leaderboard (total score), we technically need all past weeks results.
-
-      // For MVP/first pass: Fetch CURRENT week for display.
-      // Leaderboard calculation might be incorrect if we don't have all data.
-      // Let's assume for now we just show Week 1-18 logic if we can iterate, 
-      // OR just fetch 'current' week to unblock the UI.
-
-      const matchups = await getWeeklyMatchups(currentWeek);
+      if (!leagueKey) return [];
+      const matchups = await getWeeklyMatchups(currentWeek, leagueKey);
       return matchups;
     } catch (err) {
       console.error("Failed to fetch Yahoo matchups:", err);
-      throw err;
+      return [];
     }
-  }, [currentWeek]);
+  }, [currentWeek, leagueKey]);
+
+  // [NEW] Fetch Standings
+  const fetchStandingsFromYahoo = useCallback(async () => {
+    try {
+      const { getLeagueStandings } = require('../../src/services/yahooFantasy');
+      if (!leagueKey) return [];
+      const standings = await getLeagueStandings(leagueKey);
+      return standings;
+    } catch (err) {
+      console.error("Failed to fetch Standings:", err);
+      return [];
+    }
+  }, [leagueKey]);
 
   const fetchAllPicksForUser = useCallback(async (userId) => {
     if (!userId) return [];
@@ -169,44 +162,72 @@ const HomeScreen = () => {
     return score;
   };
 
-  const calculateAllScores = useCallback(async (matchups, allUsers) => {
+  const calculateAllScores = useCallback(async (matchups, allUsers, currentStandings) => {
     if (!allUsers || allUsers.length === 0) return [];
+
     const userScoresPromises = allUsers.map(async (user) => {
       const userPicks = await fetchAllPicksForUser(user.uid);
       const score = calculateTotalUserScore(matchups, userPicks);
-      return { id: user.uid, name: user.name || user.username, score, avatarUri: user.avatarUri || null };
+
+      // Find Fantasy Record (Wins-Losses-Ties)
+      // Attempt to match Firebase User Name with Yahoo Team Name or Manager Name
+      // [FIX] Priority: 1. Stored Team Key, 2. Username Match, 3. Display Name Match
+      const matchedTeam = currentStandings && currentStandings.find(t =>
+        (user.teamKey && t.team_key === user.teamKey) ||
+        (t.name && user.username && t.name.toLowerCase() === user.username.toLowerCase()) ||
+        (t.name && user.name && t.name.toLowerCase() === user.name.toLowerCase())
+      );
+
+      const record = matchedTeam
+        ? `${matchedTeam.wins}-${matchedTeam.losses}-${matchedTeam.ties}`
+        : '-';
+
+      return {
+        id: user.uid,
+        name: user.name || user.username || user.teamName || 'Unknown Player',
+        score,
+        avatarUri: user.avatarUri || user.teamLogo || null,
+        record: record,
+      };
     });
 
     const resolvedUserScores = await Promise.all(userScoresPromises);
-    const sortedLeaderboard = resolvedUserScores.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    // [FIX] Safe sort to prevent crash (handle missing names)
+    const sortedLeaderboard = resolvedUserScores.sort((a, b) => {
+      const scoreDiff = b.score - a.score;
+      if (scoreDiff !== 0) return scoreDiff;
+
+      const nameA = a.name || '';
+      const nameB = b.name || '';
+      return nameA.localeCompare(nameB);
+    });
     return sortedLeaderboard.map((user, index) => ({ ...user, rank: index + 1 }));
   }, [fetchAllPicksForUser]);
 
   const loadAllScreenData = useCallback(async () => {
     if (loggedInUser === undefined) return;
 
-    console.log("HomeScreen: Starting data load...");
-    setIsLoading(true);
     setError(null);
     try {
       const usersCollectionRef = collection(db, "users");
-      const [usersSnapshot, matchupsResult] = await Promise.all([
+      const [usersSnapshot, matchupsResult, standingsResult] = await Promise.all([
         getDocs(usersCollectionRef),
-        fetchMatchupsFromYahoo()
+        fetchMatchupsFromYahoo(),
+        fetchStandingsFromYahoo()
       ]);
 
-      const allUsers = usersSnapshot.docs.map(doc => doc.data());
-      setAllMatchups(matchupsResult);
+      setLeagueStandings(standingsResult);
 
+      const allUsers = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      setAllMatchups(matchupsResult);
 
       if (loggedInUser) {
         setIsProcessingScore(true);
         const userDocRef = doc(db, "users", loggedInUser.uid);
         const userDoc = await getDoc(userDocRef);
         const userData = userDoc.exists() ? userDoc.data() : null;
-
-        console.log("Avatar URI:", userData?.avatarUri);
-        setProfileImageUri(userData?.avatarUri || null);
+        // [FIX] Use Team Logo if no custom avatar
+        setProfileImageUri(userData?.avatarUri || userData?.teamLogo || null);
 
         const userPicks = await fetchAllPicksForUser(loggedInUser.uid);
         const score = calculateTotalUserScore(matchupsResult, userPicks);
@@ -217,9 +238,10 @@ const HomeScreen = () => {
         setProfileImageUri(null);
       }
 
-      if (matchupsResult.length > 0) {
+      if (matchupsResult.length > 0 || allUsers.length > 0) {
         setIsLoadingLeaderboard(true);
-        const leaderboard = await calculateAllScores(matchupsResult, allUsers);
+        // Pass standings to calculation
+        const leaderboard = await calculateAllScores(matchupsResult, allUsers, standingsResult);
         setLeaderboardDisplayData(leaderboard.slice(0, 12));
         setIsLoadingLeaderboard(false);
       } else {
@@ -228,11 +250,12 @@ const HomeScreen = () => {
       }
     } catch (e) {
       console.error("HomeScreen: Error in loadAllScreenData:", e);
-      setError("Failed to load screen data. Please try again.");
+      setError("Failed to load data.");
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
-  }, [loggedInUser, fetchMatchupsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
+  }, [loggedInUser, fetchMatchupsFromYahoo, fetchStandingsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
 
   useFocusEffect(
     useCallback(() => {
@@ -240,12 +263,19 @@ const HomeScreen = () => {
         await loadAllScreenData();
       };
 
+
+      if (!leagueKey && loggedInUser) {
+        console.log('HomeScreen: Missing League Key, redirecting to setup...');
+        router.replace('/appGroup/leagueSetup');
+        return;
+      }
+
       fetchData();
 
       return () => {
         // Optional cleanup function
       };
-    }, [loadAllScreenData])
+    }, [loadAllScreenData, leagueKey, loggedInUser])
   );
 
   useEffect(() => {
@@ -266,576 +296,264 @@ const HomeScreen = () => {
     }
   }, [currentWeek, allMatchups]);
 
-  const handleNavigateToMakePicks = () => {
-    const path = '/appGroup/makepicks';
-    console.log(`HomeScreen: Navigating to MakePicks, path: ${path}, params: week ${currentWeek}`);
-    router.push({ pathname: path, params: { week: currentWeek } });
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadAllScreenData();
+  }, [loadAllScreenData]);
 
-  const navigateToSettings = () => {
-    const path = '/appGroup/settings';
-    console.log(`HomeScreen: Navigating to Settings, path: ${path}`);
-    router.push(path);
-  };
+  const handleNavigateToMakePicks = () => router.push({ pathname: '/appGroup/makepicks', params: { week: currentWeek } });
+  const navigateToProfile = () => router.push('/appGroup/profile');
 
-  const navigateToProfile = () => {
-    const path = '/appGroup/profile';
-    console.log(`HomeScreen: Navigating to Profile, path: ${path}`);
-    router.push(path);
-  };
+  // --- RENDER HELPERS ---
+  const podiumUsers = leaderboardDisplayData.slice(0, 3);
+  const listUsers = leaderboardDisplayData.slice(3);
 
-  const getRankStyle = (rank) => {
-    if (rank === 1) return homeScreenStyles.rankGold;
-    if (rank === 2) return homeScreenStyles.rankSilver;
-    if (rank === 3) return homeScreenStyles.rankBronze;
-    return null;
-  };
-  const renderRankIcon = (rank) => {
-    if (rank === 1) return <Ionicons name="trophy" size={18} color={GOLD_COLOR} style={homeScreenStyles.leaderboardRankIcon} />;
-    if (rank === 2) return <Ionicons name="trophy" size={16} color={SILVER_COLOR} style={homeScreenStyles.leaderboardRankIcon} />;
-    if (rank === 3) return <Ionicons name="trophy" size={14} color={BRONZE_COLOR} style={homeScreenStyles.leaderboardRankIcon} />;
-    return <Text style={homeScreenStyles.leaderboardRankNumber}>{rank}</Text>;
-  };
-
-  // Prepare data for podium and list
-  const podiumUsers = leaderboardDisplayData.slice(0, 3); // Top 3
-  const listUsers = leaderboardDisplayData.slice(3);    // Ranks 4-12
-
-  if (isLoading) { return <View style={homeScreenStyles.centeredFull}><ActivityIndicator size="large" color={PRIMARY_COLOR} /><Text style={homeScreenStyles.loadingText}>Loading Home...</Text></View>; }
-  if (error) { return <View style={homeScreenStyles.centeredFull}><Text style={homeScreenStyles.errorText}>{error}</Text><Button title="Retry" onPress={loadAllScreenData} /></View>; }
+  if (isLoading && !refreshing) {
+    return (
+      <View style={[homeScreenStyles.container, homeScreenStyles.centered]}>
+        <ActivityIndicator size="large" color={SECONDARY_COLOR} />
+        <Text style={{ color: TEXT_COLOR_MAIN, marginTop: 10 }}>Loading Season Data...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={homeScreenStyles.container}>
-      <ScrollView style={homeScreenStyles.scrollView} contentContainerStyle={homeScreenStyles.scrollViewContent}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, marginBottom: 10 }}>
+      <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
+      <ScrollView
+        style={homeScreenStyles.scrollView}
+        contentContainerStyle={homeScreenStyles.scrollViewContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={SECONDARY_COLOR} />}
+      >
+        {/* HEADER SECTION */}
+        <View style={homeScreenStyles.headerContainer}>
           <TouchableOpacity onPress={navigateToProfile}>
             {profileImageUri ? (
-              <Image source={{ uri: profileImageUri }} style={homeScreenStyles.welcomeAvatar} />
+              <Image source={{ uri: profileImageUri }} style={homeScreenStyles.headerAvatar} />
             ) : (
-              <View style={homeScreenStyles.welcomeAvatarPlaceholder}>
-                <Ionicons name="person-outline" size={24} color={PRIMARY_COLOR} />
+              <View style={homeScreenStyles.headerAvatarPlaceholder}>
+                <Ionicons name="person" size={24} color={PRIMARY_COLOR} />
               </View>
             )}
           </TouchableOpacity>
 
-          <View style={{ marginLeft: 10, alignItems: 'center' }}>
-            <Text style={homeScreenStyles.welcomeText}>
-              WELCOME BACK,
+          <View style={homeScreenStyles.headerTextContainer}>
+            <Text style={homeScreenStyles.welcomeLabel}>WELCOME BACK,</Text>
+            <Text style={homeScreenStyles.usernameText}>
+              {loggedInUser?.teamName || loggedInUser?.name || loggedInUser?.username || "Player"}
             </Text>
-            <Text style={homeScreenStyles.welcomeText}>
-              {loggedInUser?.name || loggedInUser?.username || "User"}!
-            </Text>
-            <Text style={homeScreenStyles.subHeaderText}>
-              Week {currentWeek}. Time to make your picks!
-            </Text>
+            <Text style={homeScreenStyles.weekSubText}>Week {currentWeek} • Season 2025</Text>
           </View>
         </View>
 
+        {/* WEEK NAV & SCORE CARD */}
+        <View style={homeScreenStyles.statsRow}>
+          {/* Week Nav */}
+          <View style={homeScreenStyles.weekNavCard}>
+            <TouchableOpacity
+              onPress={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
+              disabled={currentWeek === 1}
+            >
+              <Ionicons name="chevron-back" size={24} color={currentWeek === 1 ? '#555' : SECONDARY_COLOR} />
+            </TouchableOpacity>
 
-        <View style={homeScreenStyles.weekNavigation}>
-          <TouchableOpacity
-            style={[homeScreenStyles.weekNavButton, (currentWeek === 1 || isLoading) && homeScreenStyles.weekNavButtonDisabled]}
-            onPress={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
-            disabled={currentWeek === 1 || isLoading}
-          >
-            <Ionicons name="chevron-back-outline" size={18} color={TEXT_COLOR_LIGHT} />
-            <Text style={homeScreenStyles.weekNavButtonText}>Prev</Text>
-          </TouchableOpacity>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: TEXT_COLOR_SUB, fontSize: 10, fontWeight: 'bold' }}>CURRENT WEEK</Text>
+              <Text style={{ color: TEXT_COLOR_MAIN, fontSize: 24, fontWeight: 'bold' }}>{currentWeek}</Text>
+            </View>
 
-          <Text style={homeScreenStyles.weekIndicatorText}>Week {currentWeek}</Text>
+            <TouchableOpacity
+              onPress={() => setCurrentWeek(prev => prev + 1)}
+              disabled={currentWeek >= MAX_WEEKS}
+            >
+              <Ionicons name="chevron-forward" size={24} color={currentWeek >= MAX_WEEKS ? '#555' : SECONDARY_COLOR} />
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity
-            style={[homeScreenStyles.weekNavButton, (currentWeek >= MAX_WEEKS || isLoading) && homeScreenStyles.weekNavButtonDisabled]}
-            onPress={() => setCurrentWeek(prev => prev + 1)}
-            disabled={currentWeek >= MAX_WEEKS || isLoading}
-          >
-            <Text style={homeScreenStyles.weekNavButtonText}>Next</Text>
-            <Ionicons name="chevron-forward-outline" size={18} color={TEXT_COLOR_LIGHT} />
-          </TouchableOpacity>
+          {/* User Score */}
+          <View style={homeScreenStyles.scoreCard}>
+            <Text style={{ color: TEXT_COLOR_SUB, fontSize: 10, fontWeight: 'bold' }}>POINTS CORRECT</Text>
+            <Text style={{ color: ACCENT_COLOR, fontSize: 28, fontWeight: 'bold' }}>{totalUserScore}</Text>
+          </View>
         </View>
 
-        <TouchableOpacity style={homeScreenStyles.actionCard} onPress={handleNavigateToMakePicks}>
+        {/* ACTION BUTTON */}
+        <TouchableOpacity style={homeScreenStyles.actionButton} onPress={handleNavigateToMakePicks}>
           <View>
-            <Text style={homeScreenStyles.actionCardTitle}>Make Your Picks for Week {currentWeek}</Text>
-            <Text style={homeScreenStyles.actionCardSubtitle}>Picks lock every Thursday at 7:15 PM CT</Text>
+            <Text style={homeScreenStyles.actionTitle}>MAKE PICKS</Text>
+            <Text style={homeScreenStyles.actionSubtitle}>Lock: Thursday 7:15 PM CT</Text>
           </View>
-          <ArrowRightIcon />
+          <Ionicons name="arrow-forward-circle" size={32} color={PRIMARY_COLOR} />
         </TouchableOpacity>
 
-        <View style={homeScreenStyles.summaryCard}>
-          <Text style={homeScreenStyles.summaryCardTitle}>Your Current Score</Text>
-          {isProcessingScore ? (
-            <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+        {/* LEADERBOARD SECTION */}
+        <View style={homeScreenStyles.leaderboardContainer}>
+          <Text style={homeScreenStyles.sectionTitle}>🏆 LEADERBOARD</Text>
+
+          {leaderboardDisplayData.length === 0 ? (
+            <Text style={homeScreenStyles.noDataText}>No data yet. Season starts soon!</Text>
           ) : (
-            <Text style={homeScreenStyles.summaryCardScore}>{totalUserScore} pts</Text>
+            <>
+              {/* PODIUM */}
+              <View style={homeScreenStyles.podiumContainer}>
+                {/* 2nd Place */}
+                {podiumUsers[1] && <PodiumItem user={podiumUsers[1]} place={2} color={SILVER_COLOR} />}
+                {/* 1st Place */}
+                {podiumUsers[0] && <PodiumItem user={podiumUsers[0]} place={1} color={GOLD_COLOR} />}
+                {/* 3rd Place */}
+                {podiumUsers[2] && <PodiumItem user={podiumUsers[2]} place={3} color={BRONZE_COLOR} />}
+              </View>
+
+              {/* LIST */}
+              <View style={homeScreenStyles.listContainer}>
+                {listUsers.map((user) => (
+                  <View key={user.id} style={homeScreenStyles.listItem}>
+                    <Text style={homeScreenStyles.listRank}>{user.rank}</Text>
+                    <Image
+                      source={user.avatarUri ? { uri: user.avatarUri } : null}
+                      style={homeScreenStyles.listAvatar}
+                      defaultSource={null}
+                    />
+                    {!user.avatarUri && <View style={[homeScreenStyles.listAvatar, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><Ionicons name="person" color="#555" size={16} /></View>}
+
+                    <View style={homeScreenStyles.listInfo}>
+                      <Text style={homeScreenStyles.listName} numberOfLines={1}>{user.name}</Text>
+                      <Text style={homeScreenStyles.listRecord}>Record: {user.record}</Text>
+                    </View>
+                    <Text style={homeScreenStyles.listScore}>{user.score} pts</Text>
+                  </View>
+                ))}
+              </View>
+            </>
           )}
         </View>
 
-        {featuredMatchup ? (
-          <View style={homeScreenStyles.featuredMatchupContainer}>
-            <Text style={homeScreenStyles.sectionTitle}>⭐ Featured Matchup This Week</Text>
-            <View style={homeScreenStyles.matchupCard}>
-              <View style={homeScreenStyles.teamDisplay}>
-                <View style={[homeScreenStyles.teamLogoCircle, { backgroundColor: '#007ACC' }]}>
-                  <Text style={homeScreenStyles.teamLogoText}>{featuredMatchup.AwayTeamAB || 'N/A'}</Text>
-                </View>
-                <Text style={homeScreenStyles.teamName}>{featuredMatchup.AwayTeamName || 'Away Team'}</Text>
-                <Text style={homeScreenStyles.teamProjected}>
-                  {(featuredMatchup.AwayTeamProjectedPoints !== undefined ? Number(featuredMatchup.AwayTeamProjectedPoints).toFixed(1) : '0.0')} Proj.
-                </Text>
+        {/* Featured Matchup (Optional/Bottom) */}
+        {featuredMatchup && (
+          <View style={homeScreenStyles.featuredCard}>
+            <Text style={[homeScreenStyles.sectionTitle, { marginBottom: 10 }]}>FEATURED MATCHUP</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={homeScreenStyles.teamAbbr}>{featuredMatchup.AwayTeamAB}</Text>
+                <Text style={homeScreenStyles.projPoints}>{Number(featuredMatchup.AwayTeamProjectedPoints || 0).toFixed(1)}</Text>
               </View>
-              <Text style={homeScreenStyles.vsText}>VS</Text>
-              <View style={homeScreenStyles.teamDisplay}>
-                <View style={[homeScreenStyles.teamLogoCircle, { backgroundColor: '#D32F2F' }]}>
-                  <Text style={homeScreenStyles.teamLogoText}>{featuredMatchup.HomeTeamAB || 'N/A'}</Text>
-                </View>
-                <Text style={homeScreenStyles.teamName}>{featuredMatchup.HomeTeamName || 'Home Team'}</Text>
-                <Text style={homeScreenStyles.teamProjected}>
-                  {(featuredMatchup.HomeTeamProjectedPoints !== undefined ? Number(featuredMatchup.HomeTeamProjectedPoints).toFixed(1) : '0.0')} Proj.
-                </Text>
+              <Text style={{ color: ACCENT_COLOR, fontWeight: 'bold' }}>VS</Text>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={homeScreenStyles.teamAbbr}>{featuredMatchup.HomeTeamAB}</Text>
+                <Text style={homeScreenStyles.projPoints}>{Number(featuredMatchup.HomeTeamProjectedPoints || 0).toFixed(1)}</Text>
               </View>
             </View>
           </View>
-        ) : (
-          allMatchups.length > 0 &&
-          <View style={homeScreenStyles.featuredMatchupContainer}>
-            <Text style={homeScreenStyles.sectionTitle}>No matchups found for Week {currentWeek}.</Text>
-          </View>
         )}
 
-        {/* Mini Leaderboard Section - NEW PODIUM STYLE */}
-        <View style={homeScreenStyles.leaderboardSectionCard}>
-          <Text style={homeScreenStyles.leaderboardSectionTitle}>🏆 Pick'em Standings 🏆</Text>
-          {isLoadingLeaderboard ? (
-            <ActivityIndicator size="large" color={PRIMARY_COLOR} style={{ marginVertical: 30 }} />
-          ) : leaderboardDisplayData.length > 0 ? (
-            <>
-              {/* Podium for Top 3 */}
-              <View style={homeScreenStyles.podiumContainer}>
-                {/* 2nd Place */}
-                {podiumUsers[1] && (
-                  <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumSecond]}>
-                    <Link href={{ pathname: '/appGroup/profile', params: { userId: podiumUsers[1].id } }} asChild>
-                      <TouchableOpacity>
-                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarSilver]}>
-                          {podiumUsers[1].avatarUri ? (
-                            <Image source={{ uri: podiumUsers[1].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
-                          ) : (
-                            <Ionicons name="american-football" size={30} color={TEXT_COLOR_DARK} />
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    </Link>
-                    <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[1].name}</Text>
-                    <Text style={homeScreenStyles.podiumScore}>{podiumUsers[1].score} pts</Text>
-                    <View style={homeScreenStyles.rankBadgeSilver}><Text style={homeScreenStyles.rankBadgeText}>2nd</Text></View>
-                  </View>
-                )}
-                {/* 1st Place */}
-                {podiumUsers[0] && (
-                  <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumFirst]}>
-                    <Link href={{ pathname: '/appGroup/profile', params: { userId: podiumUsers[0].id } }} asChild>
-                      <TouchableOpacity>
-                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarGold]}>
-                          {podiumUsers[0].avatarUri ? (
-                            <Image source={{ uri: podiumUsers[0].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
-                          ) : (
-                            <Ionicons name="american-football" size={40} color={TEXT_COLOR_DARK} />
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    </Link>
-                    <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[0].name}</Text>
-                    <Text style={homeScreenStyles.podiumScore}>{podiumUsers[0].score} pts</Text>
-                    <Ionicons name="trophy" size={30} color={GOLD_COLOR} style={{ marginTop: 5 }} />
-                  </View>
-                )}
-                {/* 3rd Place */}
-                {podiumUsers[2] && (
-                  <View style={[homeScreenStyles.podiumSpot, homeScreenStyles.podiumThird]}>
-                    <Link href={{ pathname: '/appGroup/profile', params: { userId: podiumUsers[2].id } }} asChild>
-                      <TouchableOpacity>
-                        <View style={[homeScreenStyles.podiumAvatarContainer, homeScreenStyles.podiumAvatarBronze]}>
-                          {podiumUsers[2].avatarUri ? (
-                            <Image source={{ uri: podiumUsers[2].avatarUri }} style={homeScreenStyles.leaderboardAvatarImage} />
-                          ) : (
-                            <Ionicons name="american-football" size={28} color={TEXT_COLOR_DARK} />
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    </Link>
-                    <Text numberOfLines={1} ellipsizeMode="tail" style={homeScreenStyles.podiumName}>{podiumUsers[2].name}</Text>
-                    <Text style={homeScreenStyles.podiumScore}>{podiumUsers[2].score} pts</Text>
-                    <View style={homeScreenStyles.rankBadgeBronze}><Text style={homeScreenStyles.rankBadgeText}>3rd</Text></View>
-                  </View>
-                )}
-              </View>
-
-              {/* List for Ranks 4 onwards */}
-              {listUsers.length > 0 && <Text style={homeScreenStyles.listHeader}>Ranks 4 - {leaderboardDisplayData.length}</Text>}
-              {listUsers.map((userEntry) => (
-                <Link key={userEntry.id} href={{ pathname: '/appGroup/profile', params: { userId: userEntry.id } }} asChild>
-                  <TouchableOpacity style={homeScreenStyles.leaderboardEntryCardList}>
-                    <Text style={homeScreenStyles.leaderboardRankNumberList}>{userEntry.rank}.</Text>
-                    <View style={homeScreenStyles.leaderboardAvatarPlaceholderList}>
-                      {userEntry.avatarUri ? (
-                        <Image source={{ uri: userEntry.avatarUri }} style={homeScreenStyles.leaderboardAvatarImageSmall} />
-                      ) : (
-                        <Ionicons name="american-football-outline" size={20} color={PRIMARY_COLOR} />
-                      )}
-                    </View>
-                    <Text style={homeScreenStyles.leaderboardNameList} numberOfLines={1} ellipsizeMode="tail">{userEntry.name}</Text>
-                    <Text style={homeScreenStyles.leaderboardScoreList}>{userEntry.score} pts</Text>
-                  </TouchableOpacity>
-                </Link>
-              ))}
-            </>
-          ) : (
-            <Text style={homeScreenStyles.noDataText}>No leaderboard data yet. Be the first!</Text>
-          )}
-        </View>
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 };
 
-// Styles (homeScreenStyles) remain the same
+// --- SUB-COMPONENTS ---
+const PodiumItem = ({ user, place, color }) => {
+  const isFirst = place === 1;
+  return (
+    <View style={[homeScreenStyles.podiumItem, isFirst && { marginTop: 0, paddingBottom: 20 }]}>
+      <View style={[homeScreenStyles.podiumAvatarValues, { borderColor: color }]}>
+        {user.avatarUri ?
+          <Image source={{ uri: user.avatarUri }} style={{ width: '100%', height: '100%', borderRadius: 100 }} />
+          : <Ionicons name="person" size={isFirst ? 30 : 20} color="#555" />
+        }
+      </View>
+      <View style={[homeScreenStyles.rankBadge, { backgroundColor: color }]}>
+        <Text style={{ color: '#000', fontSize: 10, fontWeight: 'bold' }}>{place}</Text>
+      </View>
+      <Text style={homeScreenStyles.podiumName} numberOfLines={1}>{user.name}</Text>
+      <Text style={homeScreenStyles.podiumScore}>{user.score} pts</Text>
+      <Text style={homeScreenStyles.podiumRecord}>{user.record}</Text>
+    </View>
+  )
+}
+
 const homeScreenStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F6F8',
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  scrollView: {
-    flex: 1,
-  },
-  scrollViewContent: {
-    padding: 20,
-  },
-  weekNavigation: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    backgroundColor: '#F9F9F9',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F9F9F9',
-  },
-  weekNavButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: PRIMARY_COLOR,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
   },
-  weekNavButtonDisabled: {
-    backgroundColor: '#BDBDBD',
-  },
-  weekNavButtonText: {
-    color: TEXT_COLOR_LIGHT,
-    fontSize: 16,
-    fontWeight: '600',
-    marginHorizontal: 4,
-  },
-  weekIndicatorText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
-  },
-  welcomeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    padding: 10,
-    backgroundColor: 'rgba(29, 54, 106, 0.05)', // Light background tint
-    borderRadius: 12,
-  },
-  welcomeAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginRight: 10,
-    resizeMode: 'cover',
-  },
-  welcomeAvatarPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#EEE',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  welcomeTextContainer: {
-    flex: 1, // Allow text container to take remaining space
-    justifyContent: 'center', // Vertically center the text line
-  },
-  welcomeText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 5,
-  },
-  welcomeNameText: {
-    fontSize: 22, // Larger name
-    fontWeight: 'bold',
-    color: TEXT_COLOR_DARK,
-  },
-  subHeaderText: {
-    fontSize: 16,
-    color: '#555555',
-    marginBottom: 25,
-  },
-  actionCard: {
-    backgroundColor: SECONDARY_COLOR,
-    borderRadius: 50,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  actionCardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  actionCardSubtitle: {
-    fontSize: 13,
-    color: '#E0E0E0',
-    marginTop: 4,
-  },
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 20,
-    marginBottom: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  summaryCardTitle: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 5,
-  },
-  summaryCardScore: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
-    marginBottom: 10,
-  },
-  linkButton: {
-    paddingVertical: 5,
-  },
-  linkButtonText: {
-    fontSize: 14,
-    color: ACCENT_COLOR,
-    fontWeight: '600',
-  },
-  leaderboardSectionCard: {
-    backgroundColor: CARD_BACKGROUND,
-    borderRadius: 12,
-    paddingVertical: 20,
-    paddingHorizontal: 10,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3,
-  },
-  leaderboardSectionTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
-    marginBottom: 25,
-    textAlign: 'center',
-  },
-  podiumContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center', // Center the podium items
-    alignItems: 'flex-end',
-    marginBottom: 25,
-    minHeight: 180,
-  },
-  podiumSpot: {
-    alignItems: 'center',
-    width: '32%', // Give a bit more space
-    marginHorizontal: '1%',
-    paddingBottom: 10, // Base padding for all spots
-  },
-  podiumFirst: {
-    order: 2,
-    transform: [{ translateY: -20 }], // Elevate 1st place
-  },
-  podiumSecond: {
-    order: 1,
-    paddingTop: 20, // Push down slightly for podium effect
-  },
-  podiumThird: {
-    order: 3,
-    paddingTop: 30, // Push down more for podium effect
-  },
-  podiumAvatarContainer: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#E8EAF6', // Lighter grey for avatar background
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    borderWidth: 3,
-  },
-  podiumAvatarGold: { borderColor: GOLD_COLOR, width: 80, height: 80, borderRadius: 40 },
-  podiumAvatarSilver: { borderColor: SILVER_COLOR, width: 65, height: 65, borderRadius: 32.5 },
-  podiumAvatarBronze: { borderColor: BRONZE_COLOR, width: 60, height: 60, borderRadius: 30 },
-  podiumName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: TEXT_COLOR_DARK,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  podiumScore: {
-    fontSize: 13,
-    color: '#444', // Slightly darker score text
-    textAlign: 'center',
-  },
-  podiumRankText: { // For 2nd and 3rd text
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: TEXT_COLOR_DARK,
-    marginTop: 4,
-  },
-  rankBadgeSilver: { backgroundColor: SILVER_COLOR, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginTop: 4 },
-  rankBadgeBronze: { backgroundColor: BRONZE_COLOR, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginTop: 4 },
-  rankBadgeText: { color: TEXT_COLOR_DARK, fontSize: 10, fontWeight: 'bold' },
-  listHeader: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
-    marginTop: 20, // Space above list
-    marginBottom: 10,
-    paddingLeft: 5,
-  },
-  leaderboardEntryCardList: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 5,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0', // Lighter separator
-  },
-  leaderboardRankNumberList: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: TEXT_COLOR_DARK, // Darker rank number
-    width: 30, // Fixed width for alignment
-    textAlign: 'center',
-    marginRight: 5,
-  },
-  leaderboardAvatarPlaceholderList: {
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    backgroundColor: '#E8E8E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  leaderboardNameList: {
-    flex: 1,
-    fontSize: 15,
-    color: TEXT_COLOR_DARK,
-  },
-  leaderboardScoreList: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
-  },
-  leaderboardAvatarImage: { // For Podium
-    width: '100%',
-    height: '100%',
-    borderRadius: 50, // Ensures the image is circular within its container
-  },
-  leaderboardAvatarImageSmall: { // For List
-    width: '100%',
-    height: '100%',
-    borderRadius: 20,
-  },
-  noDataText: { textAlign: 'center', color: '#777', fontStyle: 'italic', paddingVertical: 10, },
-  fullLeaderboardButton: { marginTop: 20, paddingVertical: 12, backgroundColor: PRIMARY_COLOR, borderRadius: 8, alignItems: 'center', },
-  fullLeaderboardButtonText: { color: TEXT_COLOR_LIGHT, fontSize: 16, fontWeight: '600', },
+  centered: { justifyContent: 'center', alignItems: 'center' },
+  scrollView: { flex: 1 },
+  scrollViewContent: { padding: 20, paddingTop: 40 }, // Header spacing
 
-  featuredMatchupContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 15,
-  },
-  matchupCard: {},
-  teamDisplay: {
+  // Header
+  headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    backgroundColor: '#F9F9F9',
-    padding: 10,
-    borderRadius: 8,
+    marginBottom: 25,
   },
-  teamLogoCircle: {
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+  headerAvatar: {
+    width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: SECONDARY_COLOR,
   },
-  teamLogoText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
+  headerAvatarPlaceholder: {
+    width: 60, height: 60, borderRadius: 30, backgroundColor: CARD_BACKGROUND,
+    justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: SECONDARY_COLOR,
   },
-  teamName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#444444',
-    flex: 1,
+  headerTextContainer: { marginLeft: 15 },
+  welcomeLabel: { color: TEXT_COLOR_SUB, fontSize: 12, fontWeight: 'bold', letterSpacing: 1 },
+  usernameText: { color: TEXT_COLOR_MAIN, fontSize: 22, fontWeight: 'bold' },
+  weekSubText: { color: ACCENT_COLOR, fontSize: 14, marginTop: 2 },
+
+  // Stats Row
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  weekNavCard: {
+    flex: 1, marginRight: 10, backgroundColor: CARD_BACKGROUND, borderRadius: 12,
+    padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'
   },
-  teamProjected: {
-    fontSize: 14,
-    color: PRIMARY_COLOR,
-    fontWeight: '500',
+  scoreCard: {
+    flex: 0.8, backgroundColor: CARD_BACKGROUND, borderRadius: 12,
+    padding: 15, justifyContent: 'center', alignItems: 'center'
   },
-  vsText: {
-    textAlign: 'center',
-    fontWeight: 'bold',
-    color: '#777777',
-    marginVertical: 8,
-    fontSize: 14,
+
+  // Action Button
+  actionButton: {
+    backgroundColor: SECONDARY_COLOR, borderRadius: 16, padding: 20,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 30, shadowColor: SECONDARY_COLOR, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8
   },
+  actionTitle: { color: PRIMARY_COLOR, fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+  actionSubtitle: { color: PRIMARY_COLOR, fontSize: 12, opacity: 0.8 },
+
+  // Leaderboard
+  leaderboardContainer: { marginBottom: 20 },
+  sectionTitle: { color: TEXT_COLOR_MAIN, fontSize: 18, fontWeight: 'bold', marginBottom: 15, letterSpacing: 1 },
+  noDataText: { color: TEXT_COLOR_SUB, textAlign: 'center', fontStyle: 'italic', marginTop: 10 },
+
+  // Podium
+  podiumContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', marginBottom: 20, height: 180 },
+  podiumItem: { width: '30%', alignItems: 'center', marginHorizontal: 5 },
+  podiumAvatarValues: {
+    width: 60, height: 60, borderRadius: 30, borderWidth: 3,
+    backgroundColor: CARD_BACKGROUND, justifyContent: 'center', alignItems: 'center', marginBottom: -10, zIndex: 1
+  },
+  rankBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginBottom: 8, zIndex: 2 },
+  podiumName: { color: TEXT_COLOR_MAIN, fontWeight: 'bold', fontSize: 12, marginBottom: 2 },
+  podiumScore: { color: SECONDARY_COLOR, fontWeight: 'bold', fontSize: 14 },
+  podiumRecord: { color: TEXT_COLOR_SUB, fontSize: 10 },
+
+  // List
+  listContainer: { backgroundColor: CARD_BACKGROUND, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 10 },
+  listItem: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)'
+  },
+  listRank: { color: TEXT_COLOR_SUB, width: 25, fontWeight: 'bold' },
+  listAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 12, backgroundColor: '#333' },
+  listInfo: { flex: 1 },
+  listName: { color: TEXT_COLOR_MAIN, fontWeight: '600', fontSize: 14 },
+  listRecord: { color: TEXT_COLOR_SUB, fontSize: 11 },
+  listScore: { color: ACCENT_COLOR, fontWeight: 'bold', fontSize: 15 },
+
+  // Featured
+  featuredCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 15 },
+  teamAbbr: { color: TEXT_COLOR_MAIN, fontWeight: 'bold', fontSize: 16 },
+  projPoints: { color: TEXT_COLOR_SUB, fontSize: 12 }
 });
 
 export default HomeScreen;

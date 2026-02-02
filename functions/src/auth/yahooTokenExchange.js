@@ -11,8 +11,10 @@ if (admin.apps.length === 0) {
 const secretClient = new SecretManagerServiceClient();
 
 async function getSecret(secretName) {
+  // Hardcoded Project ID to prevent 'projects/undefined' error
+  const projectId = 'weekly-pickem-8cea3';
   const [version] = await secretClient.accessSecretVersion({
-    name: `projects/${process.env.GCP_PROJECT}/secrets/${secretName}/versions/latest`,
+    name: `projects/${projectId}/secrets/${secretName}/versions/latest`,
   });
   return version.payload.data.toString();
 }
@@ -33,21 +35,32 @@ exports.exchangeYahooCodeForToken = async (request) => {
 
   try {
     const clientId = await getSecret('YAHOO_CLIENT_ID');
-    const clientSecret = await getSecret('YAHOO_CLIENT_SECRET');
+    // Public Client Flow (No Secret)
+    // We only use the Client ID validation + PKCE
 
     const params = new URLSearchParams();
     params.append('client_id', clientId);
-    params.append('client_secret', clientSecret);
     params.append('code', code);
     params.append('code_verifier', code_verifier);
     params.append('redirect_uri', redirect_uri);
     params.append('grant_type', 'authorization_code');
 
-    console.log('📤 Sending token request to Yahoo...');
+    console.log('📤 Sending token request to Yahoo (Public Client)...');
+    console.log('🔍 DEBUG PARAMS:', {
+      client_id_prefix: clientId ? clientId.substring(0, 5) + '...' : 'undefined',
+      redirect_uri: redirect_uri,
+      has_verifier: !!code_verifier,
+      code_length: code ? code.length : 0,
+      mode: 'public_pkce'
+    });
 
-    const tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/token', {
+    // No Basic Auth for Public Clients
+    // Update: Using /get_token endpoint as /token returns 404 for this client type
+    const tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
       body: params,
     });
 

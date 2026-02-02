@@ -174,8 +174,8 @@ const ProfileScreen = () => {
         setAboutMeText(userData.aboutMe || "Tell everyone a little about yourself!");
         const foundMood = MOOD_OPTIONS.find(mood => mood.id === userData.moodId);
         setCurrentMood(foundMood || DEFAULT_MOOD);
-        // UPDATED: Get avatar URI from Firestore document
-        setProfileImageUri(userData.avatarUri || null);
+        // UPDATED: Get avatar URI from Firestore document or Team Logo
+        setProfileImageUri(userData.avatarUri || userData.teamLogo || null);
       } else { Alert.alert("Error", "Profile not found."); }
 
       const allUsers = (usersSnapshot && Array.isArray(usersSnapshot.docs))
@@ -187,7 +187,7 @@ const ProfileScreen = () => {
         const commentData = { id: doc.id, ...doc.data() };
         const author = userMap.get(commentData.authorId);
         // Get the author's avatar from the map we already created
-        return { ...commentData, authorAvatarUri: author?.avatarUri || null };
+        return { ...commentData, authorAvatarUri: author?.avatarUri || author?.teamLogo || null };
       });
 
       setComments(fetchedComments);
@@ -247,7 +247,7 @@ const ProfileScreen = () => {
       } catch (e) {
         console.error("Failed to save profile image URI to Firestore:", e);
         Alert.alert("Error", "Could not save profile picture.");
-        setProfileImageUri(profileData.avatarUri || null);
+        setProfileImageUri(profileData.avatarUri || profileData.teamLogo || null);
       }
     }
   };
@@ -312,7 +312,7 @@ const ProfileScreen = () => {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_LIGHT} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{profileData.username || profileData.name}'s </Text>
+          <Text style={styles.headerTitle}>{profileData.teamName || profileData.username || profileData.name}'s Profile</Text>
           <View style={styles.headerSpacer} />
         </View>
         <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
@@ -329,7 +329,7 @@ const ProfileScreen = () => {
                 </View>
               )}
             </TouchableOpacity>
-            <Text style={styles.profileName}>{profileData.name}</Text>
+            <Text style={styles.profileName}>{profileData.teamName || profileData.name || "Unknown Team"}</Text>
             <Text style={styles.profileUsername}>"{profileData.username}"</Text>
             <View style={styles.moodContainer}>
               {isEditingMood && isOwnProfile ? (

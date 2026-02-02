@@ -332,6 +332,11 @@ const SettingsScreen = () => {
             href="./profile"
           />
           <SettingItem
+            iconName="football-outline"
+            title="Link Yahoo League"
+            href="./leagueSetup"
+          />
+          <SettingItem
             iconName="lock-closed-outline"
             title="Change Password"
             href="./changePassword"

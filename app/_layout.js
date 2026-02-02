@@ -2,11 +2,16 @@
 import React, { useEffect } from 'react';
 import { Stack, SplashScreen } from 'expo-router';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
-import { ActivityIndicator, View, StatusBar, StyleSheet, Text, Linking } from 'react-native';
+import { UnsavedChangesProvider } from '../src/context/UnsavedChangesContext';
+import { ActivityIndicator, View, StatusBar, StyleSheet, Text, Linking, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as WebBrowser from 'expo-web-browser';
 import { router } from 'expo-router';
 import '../polyfills';
+
+LogBox.ignoreLogs([
+    "The provided Linking scheme 'exp' does not appear",
+]);
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -69,7 +74,9 @@ export default function RootLayout() {
         <GestureHandlerRootView style={{ flex: 1 }}>
             <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
             <AuthProvider>
-                <AppStackLayout />
+                <UnsavedChangesProvider>
+                    <AppStackLayout />
+                </UnsavedChangesProvider>
             </AuthProvider>
         </GestureHandlerRootView>
     );

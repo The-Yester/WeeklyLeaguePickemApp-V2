@@ -37,7 +37,7 @@ const BORDER_COLOR = '#E0E0E0';
 // parseSheetData removed
 
 const MyPicksScreen = () => {
-  const { user } = useAuth();
+  const { user, leagueKey } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,7 +69,8 @@ const MyPicksScreen = () => {
 
       const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
       console.log(`MyPicks: Fetching matchups for week ${week}`);
-      matchups = await getWeeklyMatchups(week);
+      if (!leagueKey) return;
+      matchups = await getWeeklyMatchups(week, leagueKey);
       setAllMatchups(matchups);
 
       // Step 2: Fetch user picks for the current week from Firestore
@@ -117,7 +118,7 @@ const MyPicksScreen = () => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [user, allMatchups]);
+  }, [user, allMatchups, leagueKey]);
 
   // useFocusEffect runs data loading when the screen comes into focus or week changes
   useFocusEffect(

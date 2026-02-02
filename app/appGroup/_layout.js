@@ -133,6 +133,14 @@ export default function AppTabsLayout() {
           title: 'Change Password'
         }}
       />
+      <Tabs.Screen
+        name="leagueSetup"
+        options={{
+          href: null,
+          title: 'Setup League',
+          tabBarStyle: { display: 'none' }
+        }}
+      />
     </Tabs>
   );
 }

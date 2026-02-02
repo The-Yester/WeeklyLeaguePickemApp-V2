@@ -19,7 +19,8 @@ import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID } from '../../src/config/google';
-import { auth } from '../../src/config/firebase';
+import { auth, db } from '../../src/config/firebase'; // Ensure db is imported
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'; // Added imports
 
 export default function Login() {
     const { isLoading, promptAsync, isReady, isExpoGo, request } = useYahooAuth();
@@ -37,11 +38,39 @@ export default function Login() {
             const { id_token } = googleResponse.params;
             const credential = GoogleAuthProvider.credential(id_token);
             signInWithCredential(auth, credential)
-                .then((userCredential) => {
-                    // Link or sign in logic handled by AuthContext listener usually, 
-                    // but we might need to manually trigger our app's signIn context if it relies on firestore profile
-                    console.log('✅ Google Sign-In success', userCredential.user.uid);
-                    // router.replace('/appGroup/home'); // AuthContext listener should handle this
+                .then(async (userCredential) => {
+                    const { uid, email, displayName, photoURL } = userCredential.user;
+                    console.log('✅ Google Sign-In success', uid);
+
+                    // Create/Update Firestore User Profile
+                    const userRef = doc(db, 'users', uid);
+                    const userSnap = await getDoc(userRef);
+
+                    let userData;
+
+                    if (!userSnap.exists()) {
+                        console.log('🆕 Creating new user profile in Firestore...');
+                        userData = {
+                            uid,
+                            email,
+                            username: displayName || email.split('@')[0],
+                            photoURL,
+                            createdAt: serverTimestamp(),
+                            lastLogin: serverTimestamp(),
+                            roles: ['user'], // Default role
+                        };
+                        await setDoc(userRef, userData);
+                    } else {
+                        console.log('👋 User profile exists, updating last login...');
+                        // Merge update last login
+                        await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
+                        userData = userSnap.data();
+                    }
+
+                    // Explicitly update AuthContext to avoid race condition/missing profile warning
+                    // Pass null for Yahoo tokens as this is Google Auth (Yahoo linked later)
+                    await signIn(userData, null, null);
+
                 })
                 .catch((error) => {
                     console.error('❌ Google Sign-In error', error);
@@ -53,36 +82,19 @@ export default function Login() {
 
 
     const handleYahooLogin = async () => {
-        if (!user?.uid) {
-            Alert.alert("Login Error", "Missing Firebase UID. Please restart the app.");
-            return;
-        }
+        // We rely on useYahooAuth to handle the request/crypto generation.
+        // We do NOT need to manually set yahoo_redirect_uri here as useYahooAuth 
+        // uses its own constant for the Proxy flow.
 
-        console.log("🔐 Firebase UID before Yahoo login:", user.uid);
-        await AsyncStorage.setItem('userId', user.uid);
+        const result = await promptAsync(); // Call without args to use hook defaults (Proxy)
 
-        const state = nanoid();
-        await SecureStore.setItemAsync('yahoo_oauth_state', state);
-
-        const redirectUri = makeRedirectUri({
-            scheme: 'weeklyleaguepickemapp',
-            path: 'authGroup/callback',
-            useProxy: false,
-        });
-
-        await SecureStore.setItemAsync('yahoo_redirect_uri', redirectUri);
-
-        if (request?.codeVerifier) {
-            await SecureStore.setItemAsync('yahoo_pkce_verifier', request.codeVerifier);
-        }
-
-        if (request?.url) {
-            console.log('🔗 Launching Yahoo OAuth with URL:', request.url);
-        }
-
-        const result = await promptAsync({ useProxy: false, redirectUri });
         if (!result || result.type !== 'success') {
-            Alert.alert("Yahoo Login Failed", "Could not launch Yahoo login. Please try again.");
+            // Did the user cancel?
+            if (result?.type === 'dismiss') {
+                // optional logging
+            } else {
+                Alert.alert("Yahoo Login Failed", "Could not launch Yahoo login. Please try again.");
+            }
         }
     };
 

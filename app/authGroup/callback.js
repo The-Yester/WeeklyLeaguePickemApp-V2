@@ -7,8 +7,10 @@ import * as AuthSession from 'expo-auth-session';
 import { httpsCallable } from 'firebase/functions';
 import { OAuthProvider, signInWithCredential, signInWithCustomToken } from 'firebase/auth';
 
-import { auth, functions } from '../../src/config/firebase';
+import { auth, functions, db } from '../../src/config/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { getRedirectUri } from '../../src/config/yahoo';
+import { useAuth } from '../../src/context/AuthContext';
 
 const EXCHANGE_FN_NAME = 'yahooTokenExchange'; // Cloud Function callable name in index.js
 const SS_KEYS = {
@@ -25,6 +27,7 @@ export default function YahooCallback() {
     const [message, setMessage] = useState('Finishing sign-in…');
     const didRun = useRef(false);
     const pathname = usePathname();
+    const { setAccessToken, setRefreshToken, signIn } = useAuth();
 
     console.log('🔁 YahooCallback: Received search params:', params);
     console.log('📍 Current route pathname:', pathname);
@@ -112,14 +115,46 @@ export default function YahooCallback() {
 
         // Sign in to Firebase with the Custom Token
         const userCredential = await signInWithCustomToken(auth, tokenData.token);
-        console.log('✅ Firebase sign-in successful:', userCredential.user.uid);
+        const { uid } = userCredential.user;
+        console.log('✅ Firebase sign-in successful:', uid);
 
-        // 6) Persist session for your app (adjust to your AuthContext if needed)
-        // You might want to save yahoo_access_token specifically if you need it for API calls
+        // Create/Update Firestore User Profile
+        const userRef = doc(db, 'users', uid);
+        const userSnap = await getDoc(userRef);
+
+        let userData;
+
+        if (!userSnap.exists()) {
+            console.log('🆕 Creating new user profile in Firestore (Yahoo)...');
+            userData = {
+                uid,
+                username: `YahooUser_${uid.substring(0, 6)}`, // Fallback username
+                yahooGuid: tokenData.yahoo_guid, // Store Yahoo GUID
+                createdAt: serverTimestamp(),
+                lastLogin: serverTimestamp(),
+                roles: ['user'],
+            };
+            await setDoc(userRef, userData);
+        } else {
+            console.log('👋 User profile exists, updating last login...');
+            await setDoc(userRef, { lastLogin: serverTimestamp(), yahooGuid: tokenData.yahoo_guid }, { merge: true });
+            userData = userSnap.data();
+        }
+
+        // 6) Persist session for your app
+        const { setAccessToken, setRefreshToken } = useAuth(); // Ensure this is available or moved inside logic if hook rules apply
+
+        // Wait, callback.js is a component, so we can use hook at top level.
+        // We need to refactor slightly to get setAccessToken from hook at top.
+
         await SecureStore.setItemAsync('yahoo_access_token', tokenData.yahoo_access_token);
         if (tokenData.yahoo_refresh_token) {
             await SecureStore.setItemAsync('yahoo_refresh_token', tokenData.yahoo_refresh_token);
         }
+
+        // UPDATE CONTEXT
+        setAccessToken(tokenData.yahoo_access_token);
+        if (tokenData.yahoo_refresh_token) setRefreshToken(tokenData.yahoo_refresh_token);
 
         await SecureStore.setItemAsync(SS_KEYS.session, JSON.stringify(data));
 
