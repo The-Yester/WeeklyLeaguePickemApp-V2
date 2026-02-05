@@ -13,27 +13,26 @@ import {
   Dimensions,
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  RefreshControl
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useLocalSearchParams, Link, useFocusEffect } from 'expo-router';
+
+import { useRouter, useLocalSearchParams, Link, useFocusEffect, Stack } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { doc, getDoc, updateDoc, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../../src/config/firebase';
 import * as Linking from 'expo-linking'; // Ensure Linking is imported
+import { getLeagueStandings } from '../../src/services/yahooFantasy'; // [NEW] Import Standings
 
-// Colors and Constants
-const PRIMARY_COLOR = '#1f366a';
-const TEXT_COLOR_LIGHT = '#FFFFFF';
-const TEXT_COLOR_DARK = '#333333';
-const CARD_BACKGROUND_LIGHT = '#F0F4F7';
-const CARD_BACKGROUND_DARK = '#E8EAF6';
-const BORDER_COLOR = '#B0BEC5';
-const MYSPACE_BLUE_ACCENT = '#3B5998';
-const MYSPACE_PINK_ACCENT = '#FF69B4';
-const INPUT_BACKGROUND = '#FFFFFF';
+// --- THEME COLORS (Match Home Screen) ---
+const PRIMARY_COLOR = '#0D1B2A';    // Deep Navy Background
+const SECONDARY_COLOR = '#00E5FF';  // Cyan (Accents, Buttons)
+const ACCENT_COLOR = '#00E676';     // Green (Highlights, Success)
+const CARD_BACKGROUND = '#1B263B';  // Lighter Navy for Cards
+const TEXT_COLOR_MAIN = '#FFFFFF';  // White text for dark mode
+const TEXT_COLOR_SUB = '#B0BEC5';   // Light Grey for subtitles
 const { width } = Dimensions.get('window');
 const MAX_BIO_LENGTH = 120;
 const MOOD_OPTIONS = [
@@ -63,12 +62,12 @@ const ProfileSection = React.memo(({ title, children, iconName, onEditPress, isE
   <View style={styles.profileSection}>
     <View style={styles.sectionTitleContainer}>
       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-        {iconName && <Ionicons name={iconName} size={20} color={MYSPACE_BLUE_ACCENT} style={{ marginRight: 8 }} />}
+        {iconName && <Ionicons name={iconName} size={20} color={SECONDARY_COLOR} style={{ marginRight: 8 }} />}
         <Text style={styles.sectionTitle}>{title}</Text>
       </View>
       {isOwnProfile && onEditPress && (
         <TouchableOpacity onPress={onEditPress} style={styles.editSectionButton}>
-          <Ionicons name={isEditing ? 'close-circle-outline' : 'pencil-outline'} size={22} color={MYSPACE_BLUE_ACCENT} />
+          <Ionicons name={isEditing ? 'close-circle-outline' : 'pencil-outline'} size={22} color={SECONDARY_COLOR} />
         </TouchableOpacity>
       )}
     </View>
@@ -76,6 +75,26 @@ const ProfileSection = React.memo(({ title, children, iconName, onEditPress, isE
   </View>
 ));
 
+
+// --- GAMIFICATION HELPERS ---
+const getBadges = (stats, rank) => {
+  const badges = [];
+  if (stats.accuracy >= 70) badges.push({ id: 'oracle', name: 'The Oracle', icon: 'eye', color: '#B388FF' });
+  if (stats.accuracy >= 50 && stats.accuracy < 70) badges.push({ id: 'sharp', name: 'Sharp', icon: 'analytics', color: '#69F0AE' });
+  if (rank === 1) badges.push({ id: 'champ', name: 'The Champ', icon: 'trophy', color: '#FFD700' });
+  if (rank > 8) badges.push({ id: 'tank', name: 'The Tank', icon: 'construct', color: '#A1887F' });
+  if (stats.correctPicks > 10) badges.push({ id: 'vet', name: 'Veteran', icon: 'ribbon', color: '#40C4FF' });
+  // Default Badge
+  if (badges.length === 0) badges.push({ id: 'rookie', name: 'Rookie', icon: 'leaf', color: '#81C784' });
+  return badges;
+};
+
+const getSpiritAnimal = (rank, accuracy) => {
+  if (rank === 1) return { animal: 'Lion', icon: 'paw', desc: 'King of the Jungle', color: '#FFD54F' };
+  if (accuracy > 65) return { animal: 'Hawk', icon: 'eye-outline', desc: 'Eyes on the Prize', color: '#4FC3F7' };
+  if (rank > 8) return { animal: 'Turtle', icon: 'happy-outline', desc: 'Slow & Steady', color: '#AED581' };
+  return { animal: 'Fox', icon: 'flash-outline', desc: 'Cunning & Quick', color: '#FF8A65' };
+};
 
 const ProfileScreen = () => {
   const router = useRouter();
@@ -152,41 +171,89 @@ const ProfileScreen = () => {
     console.log(`ProfileScreen: Loading all data for user: ${profileUserId}`);
     setIsLoading(true);
     try {
+      // 1. Fetch User Data from Firestore
       const userDocRef = doc(db, "users", profileUserId);
       const commentsCollectionRef = collection(db, "users", profileUserId, "comments");
       const commentsQuery = query(commentsCollectionRef, orderBy('timestamp', 'desc'));
       const usersCollectionRef = collection(db, "users");
-      const allMatchupsPromise = fetchMatchupsFromYahoo();
       const picksCollectionRef = collection(db, "users", profileUserId, "picks");
-      const picksSnapshotPromise = getDocs(picksCollectionRef);
 
-      const [userDocSnap, commentsSnapshot, usersSnapshot, allMatchups, picksSnapshot] = await Promise.all([
-        getDoc(userDocRef),
-        getDocs(commentsQuery),
-        getDocs(usersCollectionRef),
-        allMatchupsPromise,
-        picksSnapshotPromise
-      ]);
+      const userDocSnap = await getDoc(userDocRef);
+
+      let userData = null;
+      let leagueKeyToUse = null;
 
       if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
+        userData = userDocSnap.data();
         setProfileData(userData);
         setAboutMeText(userData.aboutMe || "Tell everyone a little about yourself!");
         const foundMood = MOOD_OPTIONS.find(mood => mood.id === userData.moodId);
         setCurrentMood(foundMood || DEFAULT_MOOD);
-        // UPDATED: Get avatar URI from Firestore document or Team Logo
         setProfileImageUri(userData.avatarUri || userData.teamLogo || null);
-      } else { Alert.alert("Error", "Profile not found."); }
 
+        leagueKeyToUse = userData.leagueKey;
+      } else {
+        Alert.alert("Error", "Profile not found.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Prepare Promisses for Parallel Fetching dependent on User Data
+      //    (Matchups need leagueKey)
+      let allMatchupsPromise = Promise.resolve([]);
+      if (leagueKeyToUse) {
+        const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
+        allMatchupsPromise = getWeeklyMatchups('current', leagueKeyToUse)
+          .catch(err => { console.warn("Matchups fetch failed:", err); return []; });
+      }
+
+      const yahooProfilePromise = (async () => {
+        try {
+          const { getUserProfile } = require('../../src/services/yahooFantasy');
+          return await getUserProfile();
+        } catch (e) { console.warn("Yahoo Profile Fetch Error:", e); return null; }
+      })();
+
+      const [commentsSnapshot, usersSnapshot, allMatchups, picksSnapshot, userGlobalProfile] = await Promise.all([
+        getDocs(commentsQuery),
+        getDocs(usersCollectionRef),
+        allMatchupsPromise,
+        getDocs(picksCollectionRef),
+        yahooProfilePromise
+      ]);
+
+      // 3. Process Yahoo Standings (Needs leagueKey & teamKey)
+      if (userData.leagueKey && userData.teamKey) {
+        const { getUserStanding } = require('../../src/services/yahooFantasy');
+        try {
+          const standing = await getUserStanding(userData.leagueKey, userData.teamKey);
+          if (standing) {
+            setProfileData(prev => ({
+              ...prev,
+              record: `${standing.wins}-${standing.losses}-${standing.ties}`,
+              rank: standing.rank,
+              points: standing.points,
+              teamLogo: standing.logo_url
+            }));
+            if (standing.logo_url) {
+              setProfileImageUri(standing.logo_url);
+            }
+          }
+        } catch (err) { console.warn("Failed to fetch user standing record:", err); }
+
+        // [NEW] Fetch All Standings for Badge Context if needed (usually rank is enough)
+        // We already got specific user standing, which is enough for MVP gamification.
+      }
+
+      // 4. Process Remaining Data
       const allUsers = (usersSnapshot && Array.isArray(usersSnapshot.docs))
-        ? usersSnapshot.docs.map(doc => doc.data())
+        ? usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }))
         : [];
       const userMap = new Map(allUsers.map(u => [u.uid, u]));
 
       const fetchedComments = commentsSnapshot.docs.map(doc => {
         const commentData = { id: doc.id, ...doc.data() };
         const author = userMap.get(commentData.authorId);
-        // Get the author's avatar from the map we already created
         return { ...commentData, authorAvatarUri: author?.avatarUri || author?.teamLogo || null };
       });
 
@@ -226,31 +293,7 @@ const ProfileScreen = () => {
     }, [loadAllData])
   );
 
-  const handlePickImage = async () => {
-    if (!isOwnProfile || !profileUserId) return;
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permissionResult.granted === false) {
-      Alert.alert("Permission Required", "You need to allow access to your photos.");
-      return;
-    }
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.5,
-    });
-    if (!pickerResult.canceled && pickerResult.assets && pickerResult.assets.length > 0) {
-      const imageUri = pickerResult.assets[0].uri;
-      setProfileImageUri(imageUri); // Optimistically update UI
-      try {
-        // UPDATED: Save the URI to Firestore instead of AsyncStorage
-        const userDocRef = doc(db, "users", profileUserId);
-        await updateDoc(userDocRef, { avatarUri: imageUri });
-        Alert.alert("Success", "Profile picture updated!");
-      } catch (e) {
-        console.error("Failed to save profile image URI to Firestore:", e);
-        Alert.alert("Error", "Could not save profile picture.");
-        setProfileImageUri(profileData.avatarUri || profileData.teamLogo || null);
-      }
-    }
-  };
+
 
   const handleSaveAboutMe = async () => {
     if (!isOwnProfile || !profileUserId) return;
@@ -307,41 +350,79 @@ const ProfileScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
         <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_LIGHT} />
+            <Ionicons name="arrow-back-outline" size={28} color={TEXT_COLOR_MAIN} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{profileData.teamName || profileData.username || profileData.name}'s Profile</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {profileData.teamName ? `${profileData.teamName} Profile` : "Profile"}
+          </Text>
+          {/* Spacer to balance title if needed, or remove for left alignment preference */}
           <View style={styles.headerSpacer} />
         </View>
         <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
+
+          {/* [NEW] Profile Header - Grid Layout */}
           <View style={styles.profileHeader}>
-            <TouchableOpacity onPress={handlePickImage} disabled={!isOwnProfile} style={styles.profilePicContainer}>
-              {profileImageUri ? (
-                <Image source={{ uri: profileImageUri }} style={styles.profileImage} />
-              ) : (
-                <Ionicons name="person-circle-outline" size={width * 0.3} color={PRIMARY_COLOR} />
-              )}
-              {isOwnProfile && (
-                <View style={styles.editIconOverlay}>
-                  <Ionicons name="camera-outline" size={20} color={TEXT_COLOR_LIGHT} />
+            <View style={styles.profileHeaderGrid}>
+
+              {/* Left Column: Logo & Name */}
+              <View style={styles.profileLeftCol}>
+                <View style={styles.profilePicContainer}>
+                  {profileImageUri ? (
+                    <Image source={{ uri: profileImageUri }} style={styles.profileImage} />
+                  ) : (
+                    <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+                      <Ionicons name="shield-outline" size={40} color={TEXT_COLOR_SUB} />
+                    </View>
+                  )}
                 </View>
-              )}
-            </TouchableOpacity>
-            <Text style={styles.profileName}>{profileData.teamName || profileData.name || "Unknown Team"}</Text>
-            <Text style={styles.profileUsername}>"{profileData.username}"</Text>
-            <View style={styles.moodContainer}>
-              {isEditingMood && isOwnProfile ? (
-                <TouchableOpacity style={[styles.actionButton, styles.cancelButton, styles.moodEditToggleButton]} onPress={() => setIsEditingMood(false)}>
-                  <Text style={styles.actionButtonText}>Done</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.moodDisplay} onPress={() => isOwnProfile && setIsEditingMood(true)} disabled={!isOwnProfile}>
-                  <Text style={styles.profileStatus}>Mood: {currentMood.emoji} {currentMood.text}</Text>
-                  {isOwnProfile && <Ionicons name="pencil-outline" size={16} color={MYSPACE_PINK_ACCENT} style={{ marginLeft: 5 }} />}
-                </TouchableOpacity>
-              )}
+                <Text style={styles.teamNameMain} numberOfLines={2}>
+                  {profileData.teamName || "Unknown Team"}
+                </Text>
+                {profileData.name && <Text style={styles.managerName}>Mgr: {profileData.name}</Text>}
+              </View>
+
+              {/* Right Column: Stats & Mood */}
+              <View style={styles.profileRightCol}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statLabel}>FANTASY FOOTBALL RECORD</Text>
+                  <Text style={[styles.statValue, { color: ACCENT_COLOR }]}>
+                    {profileData.record || '0-0-0'}
+                  </Text>
+                </View>
+
+                <View style={styles.statRowSplit}>
+                  <View style={styles.statBoxSmall}>
+                    <Text style={styles.statLabel}>FF RANK</Text>
+                    <Text style={[styles.statValue, { color: SECONDARY_COLOR }]}>
+                      #{profileData.rank || '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.statBoxSmall}>
+                    <Text style={styles.statLabel}>FF PTS</Text>
+                    <Text style={styles.statValue}>
+                      {profileData.points ? profileData.points.toFixed(1) : '0'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Mood Section Moved Here */}
+                <View style={styles.moodSection}>
+                  {isEditingMood && isOwnProfile ? (
+                    <TouchableOpacity style={styles.moodEditButton} onPress={() => setIsEditingMood(false)}>
+                      <Text style={styles.moodEditText}>Save Mood</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={styles.moodDisplay} onPress={() => isOwnProfile && setIsEditingMood(true)} disabled={!isOwnProfile}>
+                      <Text style={styles.moodText}>{currentMood.emoji} {currentMood.text}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
             </View>
           </View>
 
@@ -386,6 +467,30 @@ const ProfileScreen = () => {
                 )}
               </ProfileSection>
 
+              {/* [NEW] BADGES & SPIRIT ANIMAL */}
+              <View style={styles.gamificationRow}>
+                <View style={styles.spiritAnimalCard}>
+                  <View style={[styles.spiritIconBg, { backgroundColor: getSpiritAnimal(profileData.rank || 10, userStats.accuracy).color + '30' }]}>
+                    <Ionicons name={getSpiritAnimal(profileData.rank || 10, userStats.accuracy).icon} size={24} color={getSpiritAnimal(profileData.rank || 10, userStats.accuracy).color} />
+                  </View>
+                  <View>
+                    <Text style={styles.spiritTitle}>{getSpiritAnimal(profileData.rank || 10, userStats.accuracy).animal}</Text>
+                    <Text style={styles.spiritDesc}>{getSpiritAnimal(profileData.rank || 10, userStats.accuracy).desc}</Text>
+                  </View>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.badgeScroller}>
+                  {getBadges(userStats, profileData.rank || 10).map(badge => (
+                    <View key={badge.id} style={styles.badgeItem}>
+                      <View style={[styles.badgeIcon, { backgroundColor: badge.color + '20', borderColor: badge.color }]}>
+                        <Ionicons name={badge.icon} size={16} color={badge.color} />
+                      </View>
+                      <Text style={styles.badgeText}>{badge.name}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+
               <ProfileSection title="My Pick Stats" iconName="stats-chart-outline">
                 {isLoadingStatsData ? (
                   <ActivityIndicator size="small" color={PRIMARY_COLOR} />
@@ -399,7 +504,7 @@ const ProfileScreen = () => {
                     </Text>
                   </>
                 )}
-                <TouchableOpacity onPress={() => router.push('/(app)/stats')}>
+                <TouchableOpacity onPress={() => router.push('/appGroup/stats')}>
                   <Text style={styles.linkText}>View Full Stats Breakdown</Text>
                 </TouchableOpacity>
               </ProfileSection>
@@ -408,12 +513,14 @@ const ProfileScreen = () => {
             <View style={styles.rightColumn}>
               <ProfileSection title="Managers" iconName="people-outline">
                 {leagueMates.length > 0 ? leagueMates.slice(0, 12).map(mate => (
-                  <Link key={mate.uid} href={{ pathname: '/(app)/home/profile', params: { userId: mate.uid } }} asChild>
-                    <TouchableOpacity style={styles.friendItemContainer}>
-                      <Ionicons name="person-outline" size={16} color={MYSPACE_BLUE_ACCENT} style={{ marginRight: 5 }} />
-                      <Text style={styles.friendItem}>{mate.name || mate.username}</Text>
-                    </TouchableOpacity>
-                  </Link>
+                  <View key={mate.uid}>
+                    <Link href={{ pathname: '/(app)/home/profile', params: { userId: mate.uid } }} asChild>
+                      <TouchableOpacity style={styles.friendItemContainer}>
+                        <Ionicons name="person-outline" size={16} color={SECONDARY_COLOR} style={{ marginRight: 5 }} />
+                        <Text style={styles.friendItem}>{mate.name || mate.username}</Text>
+                      </TouchableOpacity>
+                    </Link>
+                  </View>
                 )) : <Text style={styles.smallTextMuted}>No other managers found.</Text>}
                 {leagueMates.length > 8 && <Text style={styles.linkText}>...and more!</Text>}
               </ProfileSection>
@@ -423,7 +530,7 @@ const ProfileScreen = () => {
                   style={styles.yahooLinkButton}
                   onPress={() => Linking.openURL('https://football.fantasysports.yahoo.com/f1/66645?lhst=stand#leaguehomestandings')}
                 >
-                  <Ionicons name="logo-yahoo" size={30} color={TEXT_COLOR_LIGHT} style={{ marginRight: 8 }} />
+                  <Ionicons name="logo-yahoo" size={30} color={TEXT_COLOR_MAIN} style={{ marginRight: 8 }} />
                   <Text style={styles.yahooLinkButtonText}>View on Y!</Text>
                 </TouchableOpacity>
               </ProfileSection>
@@ -440,7 +547,7 @@ const ProfileScreen = () => {
               multiline={true}
             />
             <TouchableOpacity style={[styles.actionButton, styles.postButton]} onPress={handleAddComment}>
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color={TEXT_COLOR_LIGHT} style={{ marginRight: 5 }} />
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={TEXT_COLOR_MAIN} style={{ marginRight: 5 }} />
               <Text style={styles.actionButtonText}>Post Comment</Text>
             </TouchableOpacity>
             <View style={styles.commentsList}>
@@ -468,8 +575,8 @@ const ProfileScreen = () => {
             </View>
           </View>
         </ScrollView>
-      </View>
-    </KeyboardAvoidingView>
+      </View >
+    </KeyboardAvoidingView >
   );
 };
 
@@ -477,213 +584,291 @@ const ProfileScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#DCE1E8',
+    backgroundColor: PRIMARY_COLOR, // Dark Background
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
     flex: 1,
+    backgroundColor: PRIMARY_COLOR,
   },
   loadingText: {
     marginTop: 10,
-    color: TEXT_COLOR_DARK,
+    color: TEXT_COLOR_MAIN,
   },
   errorText: {
-    color: TEXT_COLOR_DARK,
+    color: '#FF5252',
     textAlign: 'center',
   },
   header: {
     backgroundColor: PRIMARY_COLOR,
     paddingHorizontal: 15,
-    paddingVertical: 15,
-    paddingTop: Platform.select({ android: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 20, ios: 40, default: 20 }),
+    paddingTop: Platform.select({ android: 10, ios: 50, default: 20 }), // Adjusted for non-translucent StatusBar
+    paddingBottom: 15,
     alignItems: 'center',
     flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   backButton: {
-    marginRight: 95,
+    padding: 5,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: TEXT_COLOR_LIGHT,
-    flexShrink: 1,
+    color: TEXT_COLOR_MAIN,
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 38, // Balance back button width roughly
   },
   scrollView: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
   },
   profileHeader: {
-    backgroundColor: CARD_BACKGROUND_DARK,
+    backgroundColor: CARD_BACKGROUND,
     padding: 20,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 10,
+  },
+  // [NEW] GRID LAYOUT STYLES
+  profileHeaderGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  profileLeftCol: {
+    flex: 0.45,
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderColor: MYSPACE_BLUE_ACCENT,
+    justifyContent: 'center',
+    paddingRight: 10,
+  },
+  profileRightCol: {
+    flex: 0.55,
+    justifyContent: 'center',
   },
   profilePicContainer: {
-    width: width * 0.35,
-    height: width * 0.35,
-    borderRadius: (width * 0.35) / 8,
-    borderWidth: 3,
-    borderColor: MYSPACE_BLUE_ACCENT,
+    width: width * 0.28,
+    height: width * 0.28,
+    borderRadius: (width * 0.28) / 8, // Squircle-ish
+    borderWidth: 2,
+    borderColor: SECONDARY_COLOR,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
-    backgroundColor: '#FFF',
-    position: 'relative',
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    overflow: 'hidden',
   },
   profileImage: {
     width: '100%',
     height: '100%',
-    borderRadius: (width * 0.35) / 8 - 3,
+    borderRadius: (width * 0.28) / 8 - 2,
   },
-  editIconOverlay: {
-    position: 'absolute',
-    bottom: 5,
-    right: 5,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 5,
-    borderRadius: 15,
-  },
-  profileName: {
-    fontSize: 24,
+  teamNameMain: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: PRIMARY_COLOR,
+    color: SECONDARY_COLOR,
+    textAlign: 'center',
+    marginTop: 4,
     marginBottom: 2,
+    lineHeight: 22,
   },
-  profileUsername: {
-    fontSize: 16,
-    fontStyle: 'italic',
-    color: TEXT_COLOR_DARK,
+  managerName: {
+    fontSize: 12,
+    color: TEXT_COLOR_SUB,
+    textAlign: 'center',
+  },
+  // Stats Grid
+  statBox: {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  statRowSplit: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  statBoxSmall: {
+    flex: 0.48,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+    padding: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  statLabel: {
+    fontSize: 10,
+    color: TEXT_COLOR_SUB,
+    fontWeight: 'bold',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: TEXT_COLOR_MAIN,
+  },
+  statsText: {
+    fontSize: 14,
+    color: TEXT_COLOR_SUB,
     marginBottom: 5,
   },
-  profileStatus: {
-    fontSize: 14,
-    color: MYSPACE_PINK_ACCENT,
-    fontWeight: '600',
-  },
-  moodContainer: {
-    marginTop: 8,
+  // Mood
+  moodSection: {
+    marginTop: 5,
     alignItems: 'center',
   },
   moodDisplay: {
-    flexDirection: 'row',
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+  },
+  moodText: {
+    fontSize: 14,
+    color: SECONDARY_COLOR,
+    fontWeight: '600',
+  },
+  moodEditButton: {
+    backgroundColor: SECONDARY_COLOR,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  moodEditText: {
+    color: PRIMARY_COLOR,
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  moodContainer: {
+    // Redundant with new layout but kept for safety if referenced
+    marginTop: 5,
     alignItems: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 15,
-    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  moodGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    padding: 10,
   },
   moodSelectorContainer: {
     marginHorizontal: 10,
     marginVertical: 10,
     padding: 10,
-    backgroundColor: CARD_BACKGROUND_DARK,
-    borderRadius: 6,
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   moodSelectorTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: PRIMARY_COLOR,
+    color: SECONDARY_COLOR,
     marginBottom: 10,
     textAlign: 'center',
   },
   moodOption: {
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
+    margin: 4,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  selectedMoodOption: {
+    backgroundColor: 'rgba(0, 229, 255, 0.2)',
+    borderColor: SECONDARY_COLOR,
   },
   moodOptionText: {
-    fontSize: 16,
-    color: TEXT_COLOR_DARK,
+    fontSize: 14,
+    color: TEXT_COLOR_MAIN,
   },
   moodEditToggleButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
+    // Legacy
   },
+
+  // Content Layout
   mainContent: {
     flex: 1,
     flexDirection: 'row',
     padding: 10,
   },
   leftColumn: {
-    flex: 2,
+    flex: 1, // Balanced columns
     marginRight: 5,
   },
   rightColumn: {
     flex: 1,
     marginLeft: 5,
   },
+
+  // Sections
   profileSection: {
-    backgroundColor: CARD_BACKGROUND_LIGHT,
-    borderRadius: 6,
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: 'rgba(255,255,255,0.1)',
     marginBottom: 15,
-    padding: 0,
     overflow: 'hidden',
   },
   sectionTitleContainer: {
-    backgroundColor: CARD_BACKGROUND_DARK,
-    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: 'rgba(255,255,255,0.1)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  editSectionButton: {
-    padding: 5,
-  },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: PRIMARY_COLOR,
+    color: SECONDARY_COLOR,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   sectionContent: {
-    flex: 1,
     padding: 12,
   },
+
+  // Text & Inputs
   aboutMeText: {
     fontSize: 14,
     lineHeight: 20,
-    color: TEXT_COLOR_DARK,
-    minHeight: 60,
+    color: TEXT_COLOR_SUB,
+    minHeight: 40,
   },
   textInputBio: {
-    textAlign: 'left',   // <== Important
-    writingDirection: 'ltr', // Optional
-    backgroundColor: INPUT_BACKGROUND,
-    borderColor: BORDER_COLOR,
+    textAlign: 'left',
+    writingDirection: 'ltr',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderColor: 'rgba(255,255,255,0.2)',
     borderWidth: 1,
     borderRadius: 4,
     padding: 8,
     fontSize: 14,
+    color: TEXT_COLOR_MAIN,
     minHeight: 80,
     textAlignVertical: 'top',
-    marginBottom: 5,
-    color: TEXT_COLOR_DARK,
-  },
-  textInput: {
-    textAlign: 'left',   // <== Important
-    writingDirection: 'ltr', // Optional
-    backgroundColor: INPUT_BACKGROUND,
-    borderColor: BORDER_COLOR,
-    borderWidth: 1,
-    borderRadius: 4,
-    padding: 8,
-    fontSize: 14,
     marginBottom: 10,
-    color: TEXT_COLOR_DARK,
   },
   charCount: {
-    fontSize: 12,
-    color: '#777',
+    fontSize: 10,
+    color: TEXT_COLOR_SUB,
     textAlign: 'right',
-    marginBottom: 10,
+    marginBottom: 5,
   },
   editButtonsRow: {
     flexDirection: 'row',
@@ -692,90 +877,72 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingHorizontal: 12,
     borderRadius: 4,
-    marginLeft: 10,
+    marginLeft: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  editButton: {
-    backgroundColor: MYSPACE_BLUE_ACCENT,
-    alignSelf: 'flex-start',
-    marginTop: 10,
-  },
   saveButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: ACCENT_COLOR,
   },
   cancelButton: {
-    backgroundColor: '#757575',
-  },
-  postButton: {
-    backgroundColor: MYSPACE_PINK_ACCENT,
-    alignSelf: 'flex-start',
-    marginTop: 5,
+    backgroundColor: '#546E7A',
   },
   actionButtonText: {
-    color: TEXT_COLOR_LIGHT,
-    fontWeight: '600',
-    fontSize: 14,
+    color: '#000', // Buttons like Accent Color usually have dark text
+    fontWeight: 'bold',
+    fontSize: 12,
   },
-  statsText: {
-    fontSize: 14,
-    color: TEXT_COLOR_DARK,
-    marginBottom: 5,
-  },
+
+  // Links & Lists
   friendItemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
+    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   friendItem: {
-    fontSize: 14,
-    color: TEXT_COLOR_DARK,
+    fontSize: 13,
+    color: TEXT_COLOR_MAIN,
   },
   linkText: {
-    color: MYSPACE_BLUE_ACCENT,
+    color: SECONDARY_COLOR,
     marginTop: 8,
     fontWeight: '600',
-  },
-  trophyContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 5,
-  },
-  smallText: {
     fontSize: 12,
-    color: '#777',
-    textAlign: 'center',
   },
   smallTextMuted: {
     fontSize: 12,
-    color: '#999',
+    color: TEXT_COLOR_SUB,
     marginTop: 5,
+    textAlign: 'center'
   },
+
+  // Comments
   footerCommentSection: {
     margin: 10,
     padding: 10,
-    backgroundColor: CARD_BACKGROUND_DARK,
-    borderRadius: 6,
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   commentInput: {
     minHeight: 60,
     textAlignVertical: 'top',
-    backgroundColor: INPUT_BACKGROUND,
-    borderColor: BORDER_COLOR,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderColor: 'rgba(255,255,255,0.2)',
     borderWidth: 1,
     borderRadius: 4,
     padding: 8,
     fontSize: 14,
-    color: TEXT_COLOR_DARK,
+    color: TEXT_COLOR_MAIN,
+    marginBottom: 10,
   },
   postButton: {
-    backgroundColor: MYSPACE_PINK_ACCENT,
+    backgroundColor: SECONDARY_COLOR,
     alignSelf: 'flex-start',
     marginTop: 5,
   },
@@ -783,78 +950,102 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   commentItem: {
-    backgroundColor: CARD_BACKGROUND_LIGHT,
+    backgroundColor: 'rgba(255,255,255,0.03)',
     padding: 12,
     borderRadius: 8,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   commentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  commentAvatar: {
-    marginRight: 10,
-  },
-  commentAvatarImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16, // Makes it a circle
-  },
-  commentAuthorInfo: {
-    flexDirection: 'column',
+    marginBottom: 5,
   },
   commentAuthor: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
-    color: TEXT_COLOR_DARK,
+    color: SECONDARY_COLOR,
   },
   commentTimestamp: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 10,
+    color: TEXT_COLOR_SUB,
   },
   commentText: {
     fontSize: 14,
-    color: TEXT_COLOR_DARK,
+    color: TEXT_COLOR_MAIN,
     lineHeight: 20,
   },
-  smallTextMuted: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 5,
-    textAlign: 'center'
+  commentAvatarImage: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 8,
   },
-  commentMeta: {
-    fontSize: 10,
-    color: '#777',
-    marginTop: 5,
-    textAlign: 'right',
-  },
+
+  // Misc
   yahooLinkButton: {
-    backgroundColor: '#500095', // Yahoo Purple
+    backgroundColor: '#500095',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 5,
   },
   yahooLinkButtonText: {
-    color: TEXT_COLOR_LIGHT,
+    color: '#FFF',
     fontWeight: 'bold',
-    fontSize: 10,
+    fontSize: 12,
   },
-  commentAvatarImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-  }
+  editIconOverlay: { display: 'none' }, // Check if used
+
+  // [NEW] Gamification Styles
+  gamificationRow: {
+    marginBottom: 15,
+  },
+  spiritAnimalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD_BACKGROUND,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  spiritIconBg: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+    marginRight: 10,
+  },
+  spiritTitle: {
+    color: TEXT_COLOR_MAIN, fontWeight: 'bold', fontSize: 16,
+  },
+  spiritDesc: {
+    color: TEXT_COLOR_SUB, fontSize: 12,
+  },
+  badgeScroller: {
+    flexDirection: 'row',
+  },
+  badgeItem: {
+    alignItems: 'center',
+    marginRight: 15,
+    width: 60,
+  },
+  badgeIcon: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  badgeText: {
+    color: TEXT_COLOR_SUB,
+    fontSize: 10,
+    textAlign: 'center',
+  },
 });
 
 export default ProfileScreen;

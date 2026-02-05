@@ -5,29 +5,34 @@ import {
   View,
   ScrollView,
   Text,
-  Platform,
   StatusBar,
   ActivityIndicator,
   Dimensions,
   RefreshControl,
-  Button,
-  TouchableOpacity,
-  Image
+  Image,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../src/context/AuthContext';
-import { db } from '../../src/config/firebase'; // Adjust path if needed
+import { db } from '../../src/config/firebase';
 
-// --- Configuration ---
-// --- Configuration ---
-// Removed Google Sheets Config
-const MAX_WEEKS = 18;
+// --- THEME COLORS ---
+const PRIMARY_COLOR = '#0D1B2A';
+const SECONDARY_COLOR = '#00E5FF';
+const ACCENT_COLOR = '#00E676';
+const CARD_BACKGROUND = '#1B263B';
+const TEXT_COLOR_MAIN = '#FFFFFF';
+const TEXT_COLOR_SUB = '#B0BEC5';
+const LOSS_COLOR = '#FF5252';
+const GOLD_COLOR = '#FFD700';
 
+const screenWidth = Dimensions.get("window").width;
+
+// --- CONFIG ---
 const PICKS_LOCK_SCHEDULE = [
-  { week: 1, date: '2025-09-04', lockTime: '19:15' }, // 7:15 PM in 24-hour format
+  { week: 1, date: '2025-09-04', lockTime: '19:15' },
   { week: 2, date: '2025-09-11', lockTime: '19:15' },
   { week: 3, date: '2025-09-18', lockTime: '19:15' },
   { week: 4, date: '2025-09-25', lockTime: '19:15' },
@@ -43,473 +48,525 @@ const PICKS_LOCK_SCHEDULE = [
   { week: 14, date: '2025-12-04', lockTime: '19:15' },
   { week: 15, date: '2025-12-11', lockTime: '19:15' },
   { week: 16, date: '2025-12-18', lockTime: '19:15' },
-  { week: 17, date: '2025-12-25', lockTime: '12:00' }, // Noon
+  { week: 17, date: '2025-12-25', lockTime: '12:00' },
   { week: 18, date: '2026-01-01', lockTime: '12:00' },
 ];
-
-// Colors
-const PRIMARY_COLOR = '#1f366a';
-const TEXT_COLOR_LIGHT = '#FFFFFF';
-const TEXT_COLOR_DARK = '#333333';
-const CARD_BACKGROUND = '#FFFFFF';
-const BORDER_COLOR = '#E0E0E0';
-const CHART_COLOR_CORRECT = '#4CAF50';
-const CHART_COLOR_INCORRECT = '#F44336';
-const FOOTBALL_FIELD_GREEN = '#4C956C';
-const PENDING_PICK_COLOR = '#333333'
-
-const screenWidth = Dimensions.get("window").width;
-
-// parseSheetData removed
 
 const StatsScreen = () => {
   const { user, leagueKey } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [allMatchups, setAllMatchups] = useState([]);
-  const [currentWeek, setCurrentWeek] = useState(1);
+  // Data State
+  const [seasonLeadersChart, setSeasonLeadersChart] = useState(null);
+  const [mySeasonStats, setMySeasonStats] = useState({ correct: 0, incorrect: 0, accuracy: 0, total: 0 });
+
+  // New Stats State
+  const [myBadges, setMyBadges] = useState({ maxStreak: 0, perfectWeeks: 0, efficiency: 0 });
+  const [crystalBallStats, setCrystalBallStats] = useState({ correct: 0, total: 0, percentage: 0 });
+
+  // Weekly Breakdown State
+  const [currentWeekMatchups, setCurrentWeekMatchups] = useState([]);
+  const [currentWeekPicks, setCurrentWeekPicks] = useState([]);
+  const [currentWeekNum, setCurrentWeekNum] = useState(1);
   const [isWeekLocked, setIsWeekLocked] = useState(false);
 
-  const [allUsersPicks, setAllUsersPicks] = useState([]);
-  const [loggedInUserStats, setLoggedInUserStats] = useState({ correct: 0, incorrect: 0, accuracy: 0, totalPickedGames: 0 });
-  const [topUsersChartData, setTopUsersChartData] = useState(null);
-
-  const checkLockStatus = (week) => {
-    const weekSchedule = PICKS_LOCK_SCHEDULE.find(s => s.week === week);
-    if (!weekSchedule) { setIsWeekLocked(false); return false; }
-    const lockDateTime = new Date(`${weekSchedule.date}T${weekSchedule.lockTime}:00`);
-    const locked = new Date() >= lockDateTime;
-    setIsWeekLocked(locked);
-    return locked;
-  };
-
-  const loadStats = useCallback(async (week) => {
-    if (!user) {
-      setError("Please log in to view stats.");
-      setIsLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
+  const loadSeasonStats = useCallback(async () => {
+    if (!user || !leagueKey) return;
     setIsLoading(true);
-    setError(null);
-    checkLockStatus(week);
+
     try {
-      const allMatchupsPromise = fetchMatchupsFromYahoo();
-      const usersCollectionRef = collection(db, "users");
-      const usersSnapshotPromise = getDocs(usersCollectionRef);
+      const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
 
-      const [matchups, usersSnapshot] = await Promise.all([allMatchupsPromise, usersSnapshotPromise]);
-      setAllMatchups(matchups);
+      // 1. Determine Current Week & Lock
+      const now = new Date();
+      let determinedWeek = 1;
+      for (let i = 0; i < PICKS_LOCK_SCHEDULE.length; i++) {
+        const s = PICKS_LOCK_SCHEDULE[i];
+        const lockDate = new Date(`${s.date}T${s.lockTime}:00`);
+        if (lockDate > now) {
+          determinedWeek = s.week;
+          break;
+        }
+        if (i === PICKS_LOCK_SCHEDULE.length - 1) determinedWeek = 18;
+      }
+      setCurrentWeekNum(determinedWeek);
+      const weekSchedule = PICKS_LOCK_SCHEDULE.find(s => s.week === determinedWeek);
+      const lockDateTime = weekSchedule ? new Date(`${weekSchedule.date}T${weekSchedule.lockTime}:00`) : new Date();
+      setIsWeekLocked(now >= lockDateTime);
 
-      if (matchups.length === 0) { throw new Error("Game data could not be loaded."); }
+      // 2. Fetch Users
+      const usersSnap = await getDocs(collection(db, "users"));
+      const allUsers = usersSnap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
 
-      const allUsers = usersSnapshot.docs.map(doc => doc.data());
+      // 3. Fetch Season Matchups (Limited Scope for Performance)
+      // We will fetch up to determinedWeek.
+      const weeksToFetch = Array.from({ length: determinedWeek }, (_, i) => i + 1);
+      const chunkedWeeks = [];
+      while (weeksToFetch.length) chunkedWeeks.push(weeksToFetch.splice(0, 5));
 
-      const allUserStatsPromises = allUsers.map(async (u) => {
-        const picksCollectionRef = collection(db, "users", u.uid, "picks");
-        const picksSnapshot = await getDocs(picksCollectionRef);
+      let allSeasonMatchups = [];
+      for (const chunk of chunkedWeeks) {
+        const promises = chunk.map(w => getWeeklyMatchups(w, leagueKey));
+        const results = await Promise.all(promises);
+        results.forEach(r => allSeasonMatchups.push(...r));
+      }
 
-        let allPicksForUser = [];
-        picksSnapshot.forEach(doc => {
-          const weekPicks = doc.data();
-          for (const gameUniqueID in weekPicks) {
-            allPicksForUser.push({ gameUniqueID, pickedTeamAbbr: weekPicks[gameUniqueID] });
-          }
+      // Sort matchups chronologically for Streak Calculation
+      allSeasonMatchups.sort((a, b) => {
+        if (a.Week !== b.Week) return a.Week - b.Week;
+        return a.UniqueID.localeCompare(b.UniqueID); // Stable fallback
+      });
+
+      // 4. Calculate Scores & Badges
+      const userStatsPromises = allUsers.map(async (u) => {
+        const picksRef = collection(db, "users", u.uid, "picks");
+        const picksSnap = await getDocs(picksRef);
+
+        let userCorrect = 0;
+        let userPicksMap = {};
+        picksSnap.forEach(doc => Object.assign(userPicksMap, doc.data()));
+
+        // Streak & Badge Tracking (Only for Logged In User)
+        let currentStreak = 0;
+        let maxStreak = 0;
+        let closeGameCorrect = 0;
+        let closeGameTotal = 0;
+
+        // Perfect Week Tracking
+        // Group matchups by week
+        const matchupsByWeek = {};
+        allSeasonMatchups.forEach(m => {
+          if (!matchupsByWeek[m.Week]) matchupsByWeek[m.Week] = [];
+          matchupsByWeek[m.Week].push(m);
         });
 
-        let correct = 0, incorrect = 0;
-        // Note: matchups contains only the current week's matchups in this new implementation
-        // So accuracy is "Current Week Accuracy".
-        matchups.forEach(matchup => {
-          if (matchup.UniqueID && matchup.WinningTeam && String(matchup.WinningTeam).trim() !== '') {
-            const userPick = allPicksForUser.find(p => p.gameUniqueID === matchup.UniqueID);
-            if (userPick) {
-              const winningTeam = String(matchup.WinningTeam).trim();
-              let winnerAbbr = '';
-              if (String(matchup.HomeTeamName).trim() === winningTeam) winnerAbbr = String(matchup.HomeTeamAB).trim().toUpperCase();
-              else if (String(matchup.AwayTeamName).trim() === winningTeam) winnerAbbr = String(matchup.AwayTeamAB).trim().toUpperCase();
-              else winnerAbbr = winningTeam.toUpperCase();
+        let perfectWeeks = 0;
 
-              if (userPick.pickedTeamAbbr.toUpperCase() === winnerAbbr) { correct++; } else { incorrect++; }
+        // Iterate Weeks for Perfect Check
+        for (const wk in matchupsByWeek) {
+          const weekMatches = matchupsByWeek[wk];
+          const finishedMatches = weekMatches.filter(m => m.WinningTeam);
+          if (finishedMatches.length > 0) {
+            let weekCorrect = 0;
+            finishedMatches.forEach(m => {
+              const pick = userPicksMap[m.UniqueID];
+              const winnerAbbr = m.WinningTeam === m.HomeTeamName ? m.HomeTeamAB : (m.WinningTeam === m.AwayTeamName ? m.AwayTeamAB : null);
+              if (pick && winnerAbbr && pick === winnerAbbr) weekCorrect++;
+            });
+            if (weekCorrect === finishedMatches.length && finishedMatches.length >= 4) { // Only count if >4 games (avoid bye usage tricks?)
+              perfectWeeks++;
+            }
+          }
+        }
+
+        allSeasonMatchups.forEach(m => {
+          if (m.WinningTeam) {
+            const pick = userPicksMap[m.UniqueID];
+            const winnerAbbr = m.WinningTeam === m.HomeTeamName ? m.HomeTeamAB : (m.WinningTeam === m.AwayTeamName ? m.AwayTeamAB : null);
+
+            const isCorrect = (pick && winnerAbbr && pick === winnerAbbr);
+            if (isCorrect) {
+              userCorrect++;
+              if (u.uid === user.uid) currentStreak++;
+            } else {
+              if (u.uid === user.uid) {
+                maxStreak = Math.max(maxStreak, currentStreak);
+                currentStreak = 0;
+              }
+            }
+
+            // Crystal Ball: Close Games (Diff <= 10)
+            // Only if we have actual scores (HomeTeamActualPoints)
+            // Yahoo API returns points as strings usually?
+            const hPts = Number(m.HomeTeamActualPoints);
+            const aPts = Number(m.AwayTeamActualPoints);
+            if (!isNaN(hPts) && !isNaN(aPts) && Math.abs(hPts - aPts) <= 10) {
+              if (u.uid === user.uid) {
+                closeGameTotal++;
+                if (isCorrect) closeGameCorrect++;
+              }
             }
           }
         });
 
-        const totalPickedGames = correct + incorrect;
-        const accuracy = totalPickedGames > 0 ? (correct / totalPickedGames) * 100 : 0;
-        return { uid: u.uid, name: u.name || u.username, correct, incorrect, accuracy, totalPickedGames };
+        // Finalize Streak
+        if (u.uid === user.uid) maxStreak = Math.max(maxStreak, currentStreak);
+
+        return {
+          ...u,
+          correct: userCorrect,
+          name: u.name || u.username || 'User',
+          maxStreak, // Only relevant for logged in, but we can store
+          perfectWeeks,
+          closeGameCorrect,
+          closeGameTotal
+        };
       });
 
-      const resolvedUserStats = await Promise.all(allUserStatsPromises);
+      const usersWithScores = await Promise.all(userStatsPromises);
 
-      const currentUserStats = resolvedUserStats.find(u => u.uid === user.uid);
-      if (currentUserStats) setLoggedInUserStats(currentUserStats);
+      // 5. Update UI Data
 
-      const sortedByCorrect = [...resolvedUserStats].sort((a, b) => b.correct - a.correct);
-      const topUsers = sortedByCorrect.slice(0, 5);
-      if (topUsers.length > 0) {
-        setTopUsersChartData({
-          labels: topUsers.map(u => u.name.substring(0, 10)),
-          datasets: [{ data: topUsers.map(u => u.correct) }],
+      // Leaderboard
+      const sorted = [...usersWithScores].sort((a, b) => b.correct - a.correct).slice(0, 5);
+      if (sorted.length > 0) {
+        setSeasonLeadersChart({
+          labels: sorted.map(u => u.name.split(' ')[0]),
+          datasets: [{ data: sorted.map(u => u.correct) }]
         });
-      } else {
-        setTopUsersChartData(null);
       }
 
-      const weeklyPicksPromises = allUsers.map(async (u) => {
-        const weekPicksDocRef = doc(db, "users", u.uid, "picks", `week_${week}`);
-        const weekPicksDoc = await getDoc(weekPicksDocRef);
-        return { ...u, picks: weekPicksDoc.exists() ? weekPicksDoc.data() : {} };
-      });
-      const usersWithWeeklyPicks = await Promise.all(weeklyPicksPromises);
-      setAllUsersPicks(usersWithWeeklyPicks);
+      // My Stats
+      const me = usersWithScores.find(u => u.uid === user.uid);
+      let totalCompletedGames = allSeasonMatchups.filter(m => m.WinningTeam).length;
 
-    } catch (e) {
-      console.error("StatsScreen: Error loading data:", e);
-      setError("Failed to load stats. Please try again later.");
+      if (me) {
+        setMySeasonStats({
+          correct: me.correct,
+          incorrect: totalCompletedGames - me.correct,
+          total: totalCompletedGames,
+          accuracy: totalCompletedGames > 0 ? ((me.correct / totalCompletedGames) * 100).toFixed(1) : '0.0'
+        });
+
+        setMyBadges({
+          maxStreak: me.maxStreak,
+          perfectWeeks: me.perfectWeeks,
+          efficiency: totalCompletedGames > 0 ? (me.correct / totalCompletedGames).toFixed(2) : 0
+        });
+
+        setCrystalBallStats({
+          correct: me.closeGameCorrect,
+          total: me.closeGameTotal,
+          percentage: me.closeGameTotal > 0 ? Math.round((me.closeGameCorrect / me.closeGameTotal) * 100) : 0
+        });
+      }
+
+      // Breakdown Data
+      const thisWeekMatchups = allSeasonMatchups.filter(m => m.Week === determinedWeek);
+      setCurrentWeekMatchups(thisWeekMatchups);
+
+      const weekPicksPromises = allUsers.map(async (u) => {
+        const weekDoc = await getDoc(doc(db, "users", u.uid, "picks", `week_${determinedWeek}`));
+        return { ...u, picks: weekDoc.exists() ? weekDoc.data() : {} };
+      });
+      const weekPicksRes = await Promise.all(weekPicksPromises);
+      setCurrentWeekPicks(weekPicksRes);
+
+    } catch (err) {
+      console.error("Season Stats Error:", err);
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [user, fetchMatchupsFromYahoo]);
+  }, [user, leagueKey]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (user !== undefined) {
-        loadStats(currentWeek);
-      }
-    }, [currentWeek, user, loadStats])
+  useEffect(() => {
+    loadSeasonStats();
+  }, [loadSeasonStats]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadSeasonStats();
+  };
+
+  // --- RENDERERS ---
+
+  const renderBadges = () => (
+    <View style={styles.badgeRow}>
+      <View style={styles.badgeCard}>
+        <Ionicons name="flame" size={24} color="#FF6D00" />
+        <Text style={styles.badgeValue}>{myBadges.maxStreak}</Text>
+        <Text style={styles.badgeLabel}>MAX STREAK</Text>
+      </View>
+      <View style={styles.badgeCard}>
+        <Ionicons name="diamond" size={24} color={SECONDARY_COLOR} />
+        <Text style={styles.badgeValue}>{myBadges.perfectWeeks}</Text>
+        <Text style={styles.badgeLabel}>PERFECT WKS</Text>
+      </View>
+      <View style={styles.badgeCard}>
+        <Ionicons name="speedometer" size={24} color={ACCENT_COLOR} />
+        <Text style={styles.badgeValue}>{myBadges.efficiency}</Text>
+        <Text style={styles.badgeLabel}>EFFICIENCY</Text>
+      </View>
+    </View>
   );
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    loadStats(currentWeek);
-  }, [currentWeek, loadStats]);
+  const renderCrystalBall = () => (
+    <View style={styles.crystalBallCard}>
+      <View style={styles.crystalHeader}>
+        <Ionicons name="color-wand" size={20} color="#D1C4E9" />
+        <Text style={styles.crystalTitle}>THE CRYSTAL BALL</Text>
+      </View>
+      <Text style={styles.crystalSub}>Accuracy in Close Games ({'<'}10 pts)</Text>
 
-  const fetchMatchupsFromYahoo = useCallback(async () => {
-    try {
-      const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
-      // For Stats, ideally we need ALL weeks to calculate season accuracy.
-      // Fetching weeks 1 to currentWeek
-      // This might be slow. For now, let's just fetch the requested 'currentWeek' from the props/state
-      // and maybe we accept stats are just for that week or we optimize later.
-
-      // Actually, the original code fetched valid "allMatchups" at once. 
-      // Let's try to fetch weeks 1 to 18 in parallel? No, too many requests.
-      // Let's fetch just the current selected week for display, 
-      // BUT calculate "Season Stats" only if we have data?
-      // The current implementation expects 'allMatchups' to have everything.
-
-      // Let's compromise: Fetch the requested `week`.
-      // Note: The UI shows "My Pick Performance" (cumulative?) and "Top Pickers" (cumulative).
-      // If we only fetch one week, cumulative stats will be wrong.
-
-      // Strategy: Fetch weeks 1...currentWeek (limited to say 5 requests in parallel?)
-      // Or just fetch the single week and warn user "Stats are for Week X only".
-
-      // Let's fetch the requested week first.
-
-      if (!leagueKey) {
-        console.log('Stats: No leagueKey available.');
-        return [];
-      }
-      const matchups = await getWeeklyMatchups(currentWeek, leagueKey);
-      return matchups;
-    } catch (err) {
-      console.error("Failed to fetch Yahoo matchups:", err);
-      throw err;
-    }
-  }, [currentWeek, leagueKey]);
-
-  const pieChartData = loggedInUserStats.correct + loggedInUserStats.incorrect > 0 ? [
-    { name: 'Correct', population: loggedInUserStats.correct, color: CHART_COLOR_CORRECT, legendFontColor: TEXT_COLOR_DARK, legendFontSize: 14 },
-    { name: 'Incorrect', population: loggedInUserStats.incorrect, color: CHART_COLOR_INCORRECT, legendFontColor: TEXT_COLOR_DARK, legendFontSize: 14 },
-  ] : [];
-
-  const renderContent = () => {
-    if (isLoading && !refreshing) {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={PRIMARY_COLOR} />
-          <Text style={{ marginTop: 10, color: TEXT_COLOR_DARK }}>Loading Stats...</Text>
+      <View style={styles.crystalContent}>
+        <Text style={styles.crystalBigText}>{crystalBallStats.percentage}%</Text>
+        <View>
+          <Text style={styles.crystalSmallText}>{crystalBallStats.correct} Correct</Text>
+          <Text style={styles.crystalSmallText}>{crystalBallStats.total} Close Calls</Text>
         </View>
-      );
-    }
-    if (error) {
-      return (
-        <View style={[styles.centered, { padding: 20 }]}>
-          <Ionicons name="alert-circle-outline" size={50} color={PRIMARY_COLOR} />
-          <Text style={styles.errorText}>{error}</Text>
-          <Button title="Retry" onPress={loadStats} color={PRIMARY_COLOR} />
-        </View>
-      );
-    }
+      </View>
+    </View>
+  );
 
-    const weeklyMatchups = allMatchups.filter(m => m && m.Week === currentWeek);
-
+  const renderPieChart = () => {
+    const data = [
+      { name: 'Correct', population: mySeasonStats.correct, color: ACCENT_COLOR, legendFontColor: TEXT_COLOR_MAIN, legendFontSize: 12 },
+      { name: 'Incorrect', population: mySeasonStats.incorrect, color: LOSS_COLOR, legendFontColor: TEXT_COLOR_MAIN, legendFontSize: 12 },
+    ];
     return (
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 20 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[PRIMARY_COLOR]} tintColor={PRIMARY_COLOR} />}
-      >
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>My Pick Performance</Text>
-          {user ? (
-            <>
-              <View style={styles.statRow}><Text style={styles.statLabel}>Correct Picks:</Text><Text style={styles.statValue}>{loggedInUserStats.correct}</Text></View>
-              <View style={styles.statRow}><Text style={styles.statLabel}>Incorrect Picks:</Text><Text style={styles.statValue}>{loggedInUserStats.incorrect}</Text></View>
-              <View style={styles.statRow}><Text style={styles.statLabel}>Games Picked (Completed):</Text><Text style={styles.statValue}>{loggedInUserStats.totalPickedGames}</Text></View>
-              <View style={styles.statRow}><Text style={styles.statLabel}>Accuracy:</Text><Text style={styles.statValue}>{loggedInUserStats.accuracy.toFixed(1)}%</Text></View>
-              {pieChartData.length > 0 ? (
-                <View style={styles.chartContainer}>
-                  <PieChart
-                    data={pieChartData}
-                    width={screenWidth - 60}
-                    height={220}
-                    chartConfig={{
-                      backgroundColor: '#1cc910',
-                      backgroundGradientFrom: '#eff3ff',
-                      backgroundGradientTo: '#efefef',
-                      decimalPlaces: 0,
-                      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                      style: { borderRadius: 16 },
-                    }}
-                    accessor={"population"}
-                    backgroundColor={"transparent"}
-                    paddingLeft={"15"}
-                    absolute
-                  />
-                </View>
-              ) : (
-                <Text style={styles.noChartDataText}>Make some picks for completed games to see your chart!</Text>
-              )}
-            </>
-          ) : (
-            <Text style={styles.noChartDataText}>Login to see your stats.</Text>
-          )}
+      <View style={styles.chartCard}>
+        <Text style={styles.cardTitle}>MY SEASON RECORD</Text>
+        {mySeasonStats.total > 0 ? (
+          <PieChart
+            data={data}
+            width={screenWidth - 60}
+            height={200}
+            chartConfig={{ color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})` }}
+            accessor="population"
+            backgroundColor="transparent"
+            paddingLeft="15"
+            absolute
+          />
+        ) : (
+          <Text style={styles.noDataText}>No completed games yet this season.</Text>
+        )}
+        <Text style={styles.accuracyText}>{mySeasonStats.accuracy}% Accuracy</Text>
+      </View>
+    );
+  };
+
+  const renderBarChart = () => {
+    if (!seasonLeadersChart) return null;
+    return (
+      <View style={styles.chartCard}>
+        <Text style={styles.cardTitle}>SEASON LEADERS (TOTAL CORRECT)</Text>
+        <BarChart
+          data={seasonLeadersChart}
+          width={screenWidth - 60}
+          height={220}
+          yAxisLabel=""
+          yAxisSuffix=""
+          chartConfig={{
+            backgroundColor: CARD_BACKGROUND,
+            backgroundGradientFrom: CARD_BACKGROUND,
+            backgroundGradientTo: CARD_BACKGROUND,
+            decimalPlaces: 0,
+            color: (opacity = 1) => SECONDARY_COLOR,
+            labelColor: (opacity = 1) => TEXT_COLOR_SUB,
+            barPercentage: 0.7,
+          }}
+          style={{ borderRadius: 16 }}
+          fromZero
+        />
+      </View>
+    );
+  };
+
+  const renderWeekBreakdown = () => {
+    if (!isWeekLocked) {
+      return (
+        <View style={styles.lockedContainer}>
+          <Ionicons name="lock-closed" size={48} color={SECONDARY_COLOR} />
+          <Text style={styles.lockedTitle}>WEEK {currentWeekNum} PENDING</Text>
+          <Text style={styles.lockedSub}>
+            Community picks revealed after Thursday kickoff.
+          </Text>
         </View>
+      );
+    }
+    return (
+      <View>
+        <Text style={[styles.sectionTitle, { marginTop: 20 }]}>WEEK {currentWeekNum} BREAKDOWN</Text>
+        {currentWeekMatchups.map((matchup, index) => {
+          const homePickers = currentWeekPicks.filter(u => u.picks[matchup.UniqueID] === matchup.HomeTeamAB);
+          const awayPickers = currentWeekPicks.filter(u => u.picks[matchup.UniqueID] === matchup.AwayTeamAB);
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Top Pickers (Correct Picks)</Text>
-          {topUsersChartData && topUsersChartData.labels && topUsersChartData.labels.length > 0 ? (
-            <View style={styles.chartContainer}>
-              <BarChart
-                data={topUsersChartData}
-                width={screenWidth - 50}
-                height={450}
-                yAxisLabel=""
-                yAxisSuffix=" picks"
-                chartConfig={{
-                  backgroundColor: CARD_BACKGROUND,
-                  backgroundGradientFrom: CARD_BACKGROUND,
-                  backgroundGradientTo: CARD_BACKGROUND,
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(31, 54, 106, ${opacity})`,
-                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                  style: { borderRadius: 16 },
-                  barPercentage: 0.7,
-                }}
-                verticalLabelRotation={Platform.OS === 'ios' ? 0 : 20}
-                fromZero={true}
-                style={styles.chartStyle}
-              />
-            </View>
-          ) : (
-            <Text style={styles.noChartDataText}>Not enough data for the top pickers chart yet.</Text>
-          )}
-        </View>
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Weekly Picks Breakdown</Text>
-          <View style={styles.weekNavigation}>
-            <TouchableOpacity
-              style={[styles.weekNavButton, (currentWeek === 1 || isLoading) && styles.weekNavButtonDisabled]}
-              onPress={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
-              disabled={currentWeek === 1 || isLoading}
-            >
-              <Ionicons name="chevron-back-outline" size={18} color={TEXT_COLOR_LIGHT} />
-              <Text style={styles.weekNavButtonText}>Prev</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.weekIndicatorText}>Week {currentWeek}</Text>
-
-            <TouchableOpacity
-              style={[styles.weekNavButton, (isLoading || currentWeek >= MAX_WEEKS) && styles.weekNavButtonDisabled]}
-              onPress={() => setCurrentWeek(prev => prev + 1)}
-              disabled={isLoading || currentWeek >= MAX_WEEKS}
-            >
-              <Text style={styles.weekNavButtonText}>Next</Text>
-              <Ionicons name="chevron-forward-outline" size={18} color={TEXT_COLOR_LIGHT} />
-            </TouchableOpacity>
-          </View>
-          {isWeekLocked ? (
-            allUsersPicks.map(userData => (
-              <View key={userData.uid} style={styles.userPicksContainer}>
-                <View style={styles.userPicksHeader}>
-                  {userData.avatarUri ? (
-                    <Image source={{ uri: userData.avatarUri }} style={styles.userAvatar} />
-                  ) : (
-                    <Ionicons name="person-circle-outline" size={24} color={PRIMARY_COLOR} />
-                  )}
-                  <Text style={styles.userPicksName}>{userData.name || userData.username}</Text>
+          return (
+            <View key={index} style={styles.matchupCard}>
+              {/* Header */}
+              <View style={styles.matchupHeader}>
+                <View style={styles.teamHeaderCol}>
+                  <Text style={styles.teamAbbr}>{matchup.AwayTeamAB}</Text>
+                  <View style={[styles.pickCountBadge, { backgroundColor: SECONDARY_COLOR }]}>
+                    <Text style={styles.pickCountText}>{awayPickers.length}</Text>
+                  </View>
                 </View>
-                {weeklyMatchups.map(matchup => {
-                  const pick = userData.picks[matchup.UniqueID];
-                  const pickedTeam = pick === matchup.HomeTeamAB ? matchup.HomeTeamName : (pick === matchup.AwayTeamAB ? matchup.AwayTeamName : 'No Pick');
-                  return (
-                    <View key={matchup.UniqueID} style={styles.pickRow}>
-                      <Text style={styles.pickMatchupText}>{`${matchup.AwayTeamAB} @ ${matchup.HomeTeamAB}`}</Text>
-                      <Text style={[styles.pickValueText, !pick && styles.noPickValueText]}>{pickedTeam}</Text>
-                    </View>
-                  );
-                })}
+                <Text style={styles.vsText}>AT</Text>
+                <View style={styles.teamHeaderCol}>
+                  <Text style={styles.teamAbbr}>{matchup.HomeTeamAB}</Text>
+                  <View style={[styles.pickCountBadge, { backgroundColor: ACCENT_COLOR }]}>
+                    <Text style={styles.pickCountText}>{homePickers.length}</Text>
+                  </View>
+                </View>
               </View>
-            ))
-          ) : (
-            <View style={styles.picksNotLockedContainer}>
-              <Ionicons name="lock-open-outline" size={30} color={PENDING_PICK_COLOR} />
-              <Text style={styles.picksNotLockedText}>Picks for this week are not locked yet.</Text>
-              <Text style={styles.picksNotLockedSubText}>Check back after the deadline to see everyone's selections!</Text>
+              {/* Rows */}
+              <View style={styles.pickersRow}>
+                <View style={[styles.pickersCol, { borderRightWidth: 1, borderColor: '#333' }]}>
+                  {awayPickers.map(u => (
+                    <View key={u.uid} style={styles.pickerItem}>
+                      <Image source={u.avatarUri ? { uri: u.avatarUri } : null} style={styles.miniAvatar} />
+                      <Text style={styles.pickerName} numberOfLines={1}>{u.name || u.username}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.pickersCol}>
+                  {homePickers.map(u => (
+                    <View key={u.uid} style={styles.pickerItem}>
+                      <Image source={u.avatarUri ? { uri: u.avatarUri } : null} style={styles.miniAvatar} />
+                      <Text style={styles.pickerName} numberOfLines={1}>{u.name || u.username}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
             </View>
-          )}
-        </View>
-      </ScrollView>
+          );
+        })}
+      </View>
     );
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
-
-      {renderContent()}
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={SECONDARY_COLOR} />}
+        contentContainerStyle={{ padding: 15, paddingBottom: 40 }}
+      >
+        <Text style={styles.pageHeader}>SEASON STATS</Text>
+        {renderBadges()}
+        {renderCrystalBall()}
+        {renderPieChart()}
+        {renderBarChart()}
+        {renderWeekBreakdown()}
+      </ScrollView>
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={SECONDARY_COLOR} />
+          <Text style={{ color: TEXT_COLOR_MAIN, marginTop: 10 }}>Crunching Season Data...</Text>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#e9eef2' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  // header: { backgroundColor: PRIMARY_COLOR, paddingHorizontal: 15, paddingVertical: 15, paddingTop: Platform.select({ android: StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 20, ios: 40, default: 20 }), alignItems: 'center' },
-  // headerTitle: { fontSize: 22, fontWeight: 'bold', color: TEXT_COLOR_LIGHT },
-  scrollView: { flex: 1 },
-  sectionCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 15, marginVertical: 10, marginHorizontal: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR, marginBottom: 15, textAlign: 'center' },
-  statRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
-  statLabel: { fontSize: 16, color: TEXT_COLOR_DARK },
-  statValue: { fontSize: 16, fontWeight: 'bold', color: PRIMARY_COLOR },
-  chartContainer: { alignItems: 'center', marginTop: 10, paddingRight: 10 },
-  chartStyle: { marginVertical: 8, borderRadius: 16 },
-  noChartDataText: { textAlign: 'center', color: '#777', marginTop: 20, fontStyle: 'italic', paddingBottom: 10 },
-  errorText: { color: PRIMARY_COLOR, textAlign: 'center', marginBottom: 15, fontSize: 16, fontWeight: '500' },
-  userPicksContainer: {
-    marginVertical: 10,
+  container: { flex: 1, backgroundColor: PRIMARY_COLOR },
+  pageHeader: { color: TEXT_COLOR_MAIN, fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  sectionTitle: { color: SECONDARY_COLOR, fontSize: 14, fontWeight: 'bold', marginBottom: 10, letterSpacing: 1 },
+  chartCard: {
     backgroundColor: CARD_BACKGROUND,
-    borderRadius: 8,
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  cardTitle: { color: TEXT_COLOR_SUB, fontSize: 12, fontWeight: 'bold', marginBottom: 10, alignSelf: 'flex-start' },
+  noDataText: { color: TEXT_COLOR_SUB, fontStyle: 'italic', marginVertical: 20 },
+  accuracyText: { color: TEXT_COLOR_MAIN, fontSize: 16, fontWeight: 'bold', marginTop: 10 },
+
+  // Badges
+  badgeRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  badgeCard: {
+    backgroundColor: CARD_BACKGROUND,
+    flex: 1,
+    marginHorizontal: 4,
+    borderRadius: 12,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)'
+  },
+  badgeValue: { color: TEXT_COLOR_MAIN, fontSize: 18, fontWeight: 'bold', marginVertical: 4 },
+  badgeLabel: { color: TEXT_COLOR_SUB, fontSize: 10, fontWeight: 'bold' },
+
+  // Crystal Ball
+  crystalBallCard: {
+    backgroundColor: '#262A4A', // Slightly purple tint
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#9575CD',
+  },
+  crystalHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 },
+  crystalTitle: { color: '#D1C4E9', fontWeight: 'bold', fontSize: 14 },
+  crystalSub: { color: '#B39DDB', fontSize: 11, marginBottom: 10, fontStyle: 'italic' },
+  crystalContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 },
+  crystalBigText: { color: '#EDE7F6', fontSize: 32, fontWeight: 'bold' },
+  crystalSmallText: { color: '#D1C4E9', fontSize: 12 },
+
+
+  // Locked State
+  lockedContainer: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 12,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: SECONDARY_COLOR,
+    borderStyle: 'dashed',
+    marginTop: 20,
+  },
+  lockedTitle: { color: TEXT_COLOR_MAIN, fontSize: 18, fontWeight: 'bold', marginTop: 10 },
+  lockedSub: { color: TEXT_COLOR_SUB, textAlign: 'center', marginTop: 5 },
+
+  // Matchup Breakdown
+  matchupCard: {
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#333',
     overflow: 'hidden',
   },
-  userPicksHeader: {
+  matchupHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     padding: 10,
-  },
-  userPicksName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: PRIMARY_COLOR,
-    marginLeft: 8,
-  },
-  pickRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  pickMatchupText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  pickValueText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: TEXT_COLOR_DARK,
-  },
-  noPickValueText: {
-    fontStyle: 'italic',
-    color: '#999',
-  },
-  picksNotLockedContainer: {
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-    backgroundColor: '#FFFDE7',
-    borderRadius: 8,
-  },
-  picksNotLockedText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: PENDING_PICK_COLOR,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  picksNotLockedSubText: {
-    fontSize: 14,
-    color: '#757575',
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  weekNavigation: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'rgba(0,0,0,0.2)',
     borderBottomWidth: 1,
-    borderTopWidth: 1,
-    borderColor: BORDER_COLOR,
-    marginBottom: 10,
+    borderColor: '#333',
   },
-  weekNavButton: {
+  teamHeaderCol: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: PRIMARY_COLOR,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    gap: 5,
+    flex: 1,
+    justifyContent: 'center'
   },
-  weekNavButtonDisabled: {
-    backgroundColor: '#BDBDBD',
-    elevation: 0,
-  },
-  weekNavButtonText: {
-    color: TEXT_COLOR_LIGHT,
+  teamAbbr: {
+    color: TEXT_COLOR_MAIN,
+    fontWeight: '900',
     fontSize: 16,
-    fontWeight: '600',
-    marginHorizontal: 4,
+    textAlign: 'center'
   },
-  weekIndicatorText: {
-    fontSize: 18,
+  vsText: {
+    color: TEXT_COLOR_SUB,
+    fontSize: 10,
     fontWeight: 'bold',
-    color: PRIMARY_COLOR,
+    marginHorizontal: 10
   },
-  userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  pickCountBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  pickCountText: { color: '#000', fontSize: 10, fontWeight: 'bold' },
+
+  pickersRow: { flexDirection: 'row', minHeight: 60 },
+  pickersCol: { flex: 1, padding: 10, gap: 8 },
+  pickerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  miniAvatar: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#555' },
+  pickerName: { color: TEXT_COLOR_SUB, fontSize: 12, flex: 1 },
+
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(13, 27, 42, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
   }
+
 });
 
 export default StatsScreen;

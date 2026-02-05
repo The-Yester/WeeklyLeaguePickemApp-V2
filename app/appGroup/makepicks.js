@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Alert,
   Button,
-  Image
+  Image,
+  Dimensions
 } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -104,6 +105,32 @@ const TeamDisplay = ({ teamName, teamAbbr, teamLogo, projectedPoints, isSelected
   );
 };
 
+// [NEW] "Tale of the Tape" Component
+const TaleOfTheTape = ({ awayKey, homeKey, standings }) => {
+  const awayStats = standings[awayKey] || { rank: '-', wins: 0, losses: 0, ties: 0, points: 0 };
+  const homeStats = standings[homeKey] || { rank: '-', wins: 0, losses: 0, ties: 0, points: 0 };
+
+  return (
+    <View style={styles.taleTapeContainer}>
+      <View style={styles.taleTapeRow}>
+        <Text style={styles.tapeValueAway}>{awayStats.wins}-{awayStats.losses}-{awayStats.ties}</Text>
+        <Text style={styles.tapeLabel}>RECORD</Text>
+        <Text style={styles.tapeValueHome}>{homeStats.wins}-{homeStats.losses}-{homeStats.ties}</Text>
+      </View>
+      <View style={styles.taleTapeRow}>
+        <Text style={styles.tapeValueAway}>#{awayStats.rank}</Text>
+        <Text style={styles.tapeLabel}>RANK</Text>
+        <Text style={styles.tapeValueHome}>#{homeStats.rank}</Text>
+      </View>
+      <View style={styles.taleTapeRow}>
+        <Text style={styles.tapeValueAway}>{Number(awayStats.points).toFixed(0)}</Text>
+        <Text style={styles.tapeLabel}>PTS</Text>
+        <Text style={styles.tapeValueHome}>{Number(homeStats.points).toFixed(0)}</Text>
+      </View>
+    </View>
+  );
+};
+
 const MakePicksScreen = ({ route }) => {
   const params = useLocalSearchParams();
   const navigation = useNavigation();
@@ -114,6 +141,7 @@ const MakePicksScreen = ({ route }) => {
 
   const [currentWeek, setCurrentWeek] = useState(initialWeek);
   const [currentWeekMatchups, setCurrentWeekMatchups] = useState([]);
+  const [standingsMap, setStandingsMap] = useState({}); // [NEW] Map team_key -> standing stats
 
   const [currentPicks, setCurrentPicks] = useState({});
   const [savedPicks, setSavedPicks] = useState({});
@@ -205,14 +233,24 @@ const MakePicksScreen = ({ route }) => {
       const matchups = await fetchYahooMatchupsForWeek(leagueKey, week);
       setCurrentWeekMatchups(matchups);
 
+      // [NEW] Fetch Standings for "Tale of the Tape"
+      const { getLeagueStandings } = require('../../src/services/yahooFantasy');
+      const standings = await getLeagueStandings(leagueKey).catch(err => {
+        console.warn('Failed to load standings for Tale of the Tape:', err);
+        return [];
+      });
+      // Convert to Map for fast lookup: team_key -> stats
+      const sMap = {};
+      standings.forEach(team => {
+        sMap[team.team_key] = team;
+      });
+      setStandingsMap(sMap);
+
       const weekPicksDocRef = doc(db, "users", loggedInUser.uid, "picks", `week_${week}`);
       const weekPicksDoc = await getDoc(weekPicksDocRef);
       const picksData = weekPicksDoc.exists() ? weekPicksDoc.data() : {};
       setCurrentPicks(picksData);
       setSavedPicks(picksData);
-
-      // Trigger distribution calc if needed (async)
-      // calculatePickDistribution(week, matchups).then(setPickDistribution);
 
     } catch (e) {
       console.error("MakePicksScreen: Failed to load data:", e);
@@ -407,6 +445,13 @@ const MakePicksScreen = ({ route }) => {
                     />
                   </TouchableOpacity>
                 </View>
+
+                {/* [NEW] Tale of the Tape */}
+                <TaleOfTheTape
+                  awayKey={matchup.AwayTeamKey}
+                  homeKey={matchup.HomeTeamKey}
+                  standings={standingsMap}
+                />
 
                 {/* Distribution Bar (Optional visual flair) */}
                 {/* 
@@ -634,7 +679,44 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1,
-  }
+  },
+
+  // [NEW] Tale of the Tape Styles
+  taleTapeContainer: {
+    marginTop: 15,
+    backgroundColor: 'rgba(0,0,0,0.2)', // Slightly darker than card
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  taleTapeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tapeLabel: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    fontWeight: 'bold',
+    width: 60,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  tapeValueAway: {
+    color: '#B0BEC5',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'left',
+  },
+  tapeValueHome: {
+    color: '#B0BEC5',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
 });
 
 export default MakePicksScreen;

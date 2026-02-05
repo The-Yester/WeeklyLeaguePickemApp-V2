@@ -110,7 +110,7 @@ export default function AppTabsLayout() {
       <Tabs.Screen
         name="frankings"
         options={{ title: 'Frankings' }}
-        listeners={createTabPressListener(router, 'https://frankings.blogspot.com/?view=sidebar', true)}
+        listeners={createTabPressListener(router, '/appGroup/frankings')}
       />
       <Tabs.Screen
         name="profile"
@@ -123,7 +123,8 @@ export default function AppTabsLayout() {
         name="settings"
         options={{
           href: null,
-          title: 'Settings'
+          title: 'Settings',
+          headerShown: false
         }}
       />
       <Tabs.Screen

@@ -94,6 +94,10 @@ const HomeScreen = () => {
   const [leagueStandings, setLeagueStandings] = useState([]); // [NEW] W-L records
   const [currentWeek, setCurrentWeek] = useState(() => getInitialWeek());
 
+  const [matchupOfTheWeek, setMatchupOfTheWeek] = useState(null);
+  const [communityTrend, setCommunityTrend] = useState(null);
+  const [weeklyMVP, setWeeklyMVP] = useState(null);
+
   const [isProcessingScore, setIsProcessingScore] = useState(false);
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(true);
 
@@ -102,6 +106,9 @@ const HomeScreen = () => {
     try {
       const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
       if (!leagueKey) return [];
+      // [OPTIMIZATION] Fetch ALL weeks to support MVP calculation (prev week) and current week features
+      // Note: getWeeklyMatchups usually fetches one week. We might need to fetch multiple if not cached.
+      // For now, let's assume we fetch Current Week for Matchup/Trends, and CurrentWeek - 1 for MVP.
       const matchups = await getWeeklyMatchups(currentWeek, leagueKey);
       return matchups;
     } catch (err) {
@@ -109,6 +116,16 @@ const HomeScreen = () => {
       return [];
     }
   }, [currentWeek, leagueKey]);
+
+  // Helper to fetch previous week for MVP
+  const fetchPreviousWeekMatchups = useCallback(async (week) => {
+    try {
+      if (week <= 1) return [];
+      const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
+      if (!leagueKey) return [];
+      return await getWeeklyMatchups(week - 1, leagueKey);
+    } catch (err) { console.error("MVP Fetch Error", err); return []; }
+  }, [leagueKey]);
 
   // [NEW] Fetch Standings
   const fetchStandingsFromYahoo = useCallback(async () => {
@@ -165,9 +182,19 @@ const HomeScreen = () => {
   const calculateAllScores = useCallback(async (matchups, allUsers, currentStandings) => {
     if (!allUsers || allUsers.length === 0) return [];
 
-    const userScoresPromises = allUsers.map(async (user) => {
-      const userPicks = await fetchAllPicksForUser(user.uid);
-      const score = calculateTotalUserScore(matchups, userPicks);
+    // Pre-fetch all picks for efficiency (needed for Community Trend & MVP too)
+    const allUsersPicksMap = await Promise.all(allUsers.map(async (user) => {
+      const picks = await fetchAllPicksForUser(user.uid);
+      return { ...user, picks };
+    }));
+
+    // [FEATURE 2] Community Trends
+    const trend = calculateCommunityTrends(matchups, allUsersPicksMap);
+    setCommunityTrend(trend);
+
+    // Calculate Leaderboard Scores
+    const userScoresPromises = allUsersPicksMap.map(async (user) => {
+      const score = calculateTotalUserScore(matchups, user.picks);
 
       // Find Fantasy Record (Wins-Losses-Ties)
       // Attempt to match Firebase User Name with Yahoo Team Name or Manager Name
@@ -186,12 +213,15 @@ const HomeScreen = () => {
         id: user.uid,
         name: user.name || user.username || user.teamName || 'Unknown Player',
         score,
-        avatarUri: user.avatarUri || user.teamLogo || null,
+        avatarUri: matchedTeam?.logo_url || user.teamLogo || user.avatarUri || null,
         record: record,
+        teamKey: user.teamKey,
+        picks: user.picks // Keep picks for MVP
       };
     });
 
     const resolvedUserScores = await Promise.all(userScoresPromises);
+
     // [FIX] Safe sort to prevent crash (handle missing names)
     const sortedLeaderboard = resolvedUserScores.sort((a, b) => {
       const scoreDiff = b.score - a.score;
@@ -221,13 +251,42 @@ const HomeScreen = () => {
       const allUsers = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
       setAllMatchups(matchupsResult);
 
+      // [FEATURE 1] Best Matchup
+      const bestMatch = determineBestMatchup(matchupsResult, standingsResult);
+      setMatchupOfTheWeek(bestMatch);
+
+      // [FEATURE 3] Weekly MVP (Previous Week)
+      if (currentWeek > 1) {
+        const prevWeekMatchups = await fetchPreviousWeekMatchups(currentWeek);
+        if (prevWeekMatchups && prevWeekMatchups.length > 0) {
+          // We need to calculate scores for EVERYONE for just that week
+          // Since calculateAllScores is heavy and coupled, let's do a lightweight calc here
+          // We need picks for everyone. Luckily calculateAllScores fetches them.
+          // Let's defer MVP partial calc until we have picks inside calculateAllScores?
+          // No, let's do it cleanly here.
+          // Actually, we can just let calculateAllScores return the "full data" with picks, 
+          // and then we run a quick MVP find on that data for the prev week.
+        }
+      }
+
+      // Helper to find team in standings
+      const findTeamInStandings = (user) => {
+        return standingsResult && standingsResult.find(t =>
+          (user.teamKey && t.team_key === user.teamKey) ||
+          (t.name && user.username && t.name.toLowerCase() === user.username.toLowerCase()) ||
+          (t.name && user.name && t.name.toLowerCase() === user.name.toLowerCase())
+        );
+      };
+
       if (loggedInUser) {
         setIsProcessingScore(true);
         const userDocRef = doc(db, "users", loggedInUser.uid);
         const userDoc = await getDoc(userDocRef);
         const userData = userDoc.exists() ? userDoc.data() : null;
-        // [FIX] Use Team Logo if no custom avatar
-        setProfileImageUri(userData?.avatarUri || userData?.teamLogo || null);
+
+        // [FIX] Priority: 1. Live Yahoo Logo, 2. Stored TeamLogo, 3. Avatar (Deprecated)
+        const myTeam = findTeamInStandings({ ...loggedInUser, ...userData });
+        setProfileImageUri(myTeam?.logo_url || userData?.teamLogo || userData?.avatarUri || null);
 
         const userPicks = await fetchAllPicksForUser(loggedInUser.uid);
         const score = calculateTotalUserScore(matchupsResult, userPicks);
@@ -243,6 +302,29 @@ const HomeScreen = () => {
         // Pass standings to calculation
         const leaderboard = await calculateAllScores(matchupsResult, allUsers, standingsResult);
         setLeaderboardDisplayData(leaderboard.slice(0, 12));
+
+        // [FEATURE 3 CONTINUED] MVP Calculation using the fetched pick data from leaderboard
+        if (currentWeek > 1) {
+          const prevWeekMatchups = await fetchPreviousWeekMatchups(currentWeek);
+          if (prevWeekMatchups && prevWeekMatchups.length > 0) {
+            // Calculate score for each user for PREV week
+            let bestScore = -1;
+            let mvpUser = null;
+
+            leaderboard.forEach(user => {
+              // user.picks contains ALL picks. filter for prev week matchups?
+              // actually calculateTotalUserScore handles matching by UniqueID.
+              // So if we pass prevWeekMatchups, it works!
+              const weekScore = calculateTotalUserScore(prevWeekMatchups, user.picks);
+              if (weekScore > bestScore) {
+                bestScore = weekScore;
+                mvpUser = { ...user, weeklyScore: weekScore };
+              }
+            });
+            setWeeklyMVP(mvpUser);
+          }
+        }
+
         setIsLoadingLeaderboard(false);
       } else {
         setLeaderboardDisplayData([]);
@@ -255,7 +337,7 @@ const HomeScreen = () => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [loggedInUser, fetchMatchupsFromYahoo, fetchStandingsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
+  }, [loggedInUser, fetchMatchupsFromYahoo, fetchPreviousWeekMatchups, fetchStandingsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
 
   useFocusEffect(
     useCallback(() => {
@@ -304,7 +386,82 @@ const HomeScreen = () => {
   const handleNavigateToMakePicks = () => router.push({ pathname: '/appGroup/makepicks', params: { week: currentWeek } });
   const navigateToProfile = () => router.push('/appGroup/profile');
 
-  // --- RENDER HELPERS ---
+  // --- NEW LOGIC: MATCHUP OF THE WEEK (High Stakes) ---
+  const determineBestMatchup = (weekMatchups, standings) => {
+    if (!weekMatchups?.length || !standings?.length) return null;
+
+    // Calculate "Hype Score" based on team records
+    const scoredMatchups = weekMatchups.map(m => {
+      const homeTeam = standings.find(s => s.team_key === m.HomeTeamKey);
+      const awayTeam = standings.find(s => s.team_key === m.AwayTeamKey);
+
+      const homeWins = homeTeam?.wins || 0;
+      const awayWins = awayTeam?.wins || 0;
+
+      // Hype = Combined Wins + (Projected Points / 100 for tiebreaking)
+      const hypeScore = (homeWins + awayWins) + ((Number(m.HomeTeamProjectedPoints) + Number(m.AwayTeamProjectedPoints)) / 200);
+      return { ...m, hypeScore, homeRecord: homeTeam?.record, awayRecord: awayTeam?.record };
+    });
+
+    return scoredMatchups.sort((a, b) => b.hypeScore - a.hypeScore)[0];
+  };
+
+  // --- NEW LOGIC: COMMUNITY TRENDS (The Lock) ---
+  const calculateCommunityTrends = (weekMatchups, allUserPicks) => {
+    if (!weekMatchups?.length || !allUserPicks?.length) return null;
+
+    let gameVotes = {}; // { gameID: { homeVotes: 0, awayVotes: 0, total: 0 } }
+
+    allUserPicks.forEach(user => {
+      user.picks.forEach(pick => {
+        const game = weekMatchups.find(m => m.UniqueID === pick.gameUniqueID);
+        if (game) {
+          if (!gameVotes[game.UniqueID]) gameVotes[game.UniqueID] = { ...game, homeVotes: 0, awayVotes: 0, total: 0 };
+
+          const pickedAbbr = String(pick.pickedTeamAbbr).trim().toUpperCase();
+          const homeAbbr = String(game.HomeTeamAB).trim().toUpperCase();
+          const awayAbbr = String(game.AwayTeamAB).trim().toUpperCase();
+
+          if (pickedAbbr === homeAbbr) gameVotes[game.UniqueID].homeVotes++;
+          if (pickedAbbr === awayAbbr) gameVotes[game.UniqueID].awayVotes++;
+          gameVotes[game.UniqueID].total++;
+        }
+      });
+    });
+
+    // Find most lopsided game
+    let topTrend = null;
+    let maxPercentage = 0;
+
+    Object.values(gameVotes).forEach(g => {
+      if (g.total < 3) return; // Need minimum quorum
+      const homePct = g.homeVotes / g.total;
+      const awayPct = g.awayVotes / g.total;
+
+      const gameMax = Math.max(homePct, awayPct);
+      if (gameMax > maxPercentage) {
+        maxPercentage = gameMax;
+        topTrend = {
+          ...g,
+          pickedTeam: homePct > awayPct ? g.HomeTeamName : g.AwayTeamName,
+          pickedTeamAbbr: homePct > awayPct ? g.HomeTeamAB : g.AwayTeamAB,
+          percentage: Math.round(gameMax * 100)
+        };
+      }
+    });
+
+    return topTrend;
+  };
+
+  // --- NEW LOGIC: WEEKLY MVP (Previous Week) ---
+  const calculateWeeklyMVP = (statsByWeek) => {
+    // Find highest score in the previous completed week
+    // Simplified: We need picking data per week. 
+    // Current architecture fetches ALL picks. We can filter by week if we have weekly matchups?
+    // Yes, allMatchups contains all weeks.
+    return null; // Placeholder to implement inside loadAllScreenData properly
+  };
+
   const podiumUsers = leaderboardDisplayData.slice(0, 3);
   const listUsers = leaderboardDisplayData.slice(3);
 
@@ -386,6 +543,88 @@ const HomeScreen = () => {
           <Ionicons name="arrow-forward-circle" size={32} color={PRIMARY_COLOR} />
         </TouchableOpacity>
 
+        {/* SHOWCASE SECTION (New Features) */}
+        <View style={homeScreenStyles.showcaseSection}>
+          {/* 1. WEEKLY MVP */}
+          {weeklyMVP ? (
+            <View style={homeScreenStyles.mvpCard}>
+              <View style={homeScreenStyles.mvpHeader}>
+                <Ionicons name="trophy" size={16} color={GOLD_COLOR} />
+                <Text style={homeScreenStyles.mvpLabel}>WEEK {currentWeek > 1 ? currentWeek - 1 : 1} MVP</Text>
+                <Ionicons name="trophy" size={16} color={GOLD_COLOR} />
+              </View>
+              <View style={homeScreenStyles.mvpContent}>
+                <Image source={{ uri: weeklyMVP.avatarUri }} style={homeScreenStyles.mvpAvatar} />
+                <View>
+                  <Text style={homeScreenStyles.mvpName}>{weeklyMVP.name}</Text>
+                  <Text style={homeScreenStyles.mvpScore}>{weeklyMVP.weeklyScore} PTS</Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={[homeScreenStyles.mvpCard, { opacity: 0.5 }]}>
+              <View style={homeScreenStyles.mvpHeader}><Text style={homeScreenStyles.mvpLabel}>WEEKLY MVP</Text></View>
+              <View style={{ alignItems: 'center' }}><Text style={{ color: TEXT_COLOR_SUB, fontStyle: 'italic' }}>Winner revealed next week</Text></View>
+            </View>
+          )}
+
+          {/* 2. MATCHUP OF THE WEEK */}
+          {matchupOfTheWeek ? (
+            <View style={homeScreenStyles.featuredCard}>
+              <View style={homeScreenStyles.featuredHeader}>
+                <Text style={homeScreenStyles.featuredLabel}>🔥 MATCHUP OF THE WEEK</Text>
+              </View>
+              <View style={homeScreenStyles.matchupRow}>
+                <View style={homeScreenStyles.teamColumn}>
+                  <Text style={homeScreenStyles.teamRecord}>{matchupOfTheWeek.awayRecord}</Text>
+                  <Text style={homeScreenStyles.teamAbbrBig}>{matchupOfTheWeek.AwayTeamAB}</Text>
+                </View>
+                <View style={homeScreenStyles.vsColumn}>
+                  <Text style={homeScreenStyles.vsText}>VS</Text>
+                </View>
+                <View style={homeScreenStyles.teamColumn}>
+                  <Text style={homeScreenStyles.teamRecord}>{matchupOfTheWeek.homeRecord}</Text>
+                  <Text style={homeScreenStyles.teamAbbrBig}>{matchupOfTheWeek.HomeTeamAB}</Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={[homeScreenStyles.featuredCard, { justifyContent: 'center', alignItems: 'center' }]}>
+              <Text style={homeScreenStyles.featuredLabel}>🔥 MATCHUP OF THE WEEK</Text>
+              <Text style={{ color: TEXT_COLOR_SUB, fontStyle: 'italic', marginTop: 5 }}>No matchups scheduled</Text>
+            </View>
+          )}
+
+          {/* 3. COMMUNITY TREND (THE LOCK) */}
+          {communityTrend ? (
+            <View style={homeScreenStyles.trendCard}>
+              <View style={homeScreenStyles.trendHeader}>
+                <Ionicons name="analytics" size={14} color={SECONDARY_COLOR} />
+                <Text style={homeScreenStyles.trendLabel}>COMMUNITY "LOCK"</Text>
+              </View>
+              <View style={homeScreenStyles.trendContent}>
+                <Text style={homeScreenStyles.trendText}>
+                  <Text style={{ fontWeight: 'bold', color: ACCENT_COLOR }}>{communityTrend.percentage}%</Text> picked {communityTrend.pickedTeamAbbr}
+                </Text>
+                <View style={homeScreenStyles.progressBarBg}>
+                  <View style={[homeScreenStyles.progressBarFill, { width: `${communityTrend.percentage}%` }]} />
+                </View>
+                <Text style={homeScreenStyles.trendVs}>vs {communityTrend.pickedTeamAbbr === communityTrend.HomeTeamAB ? communityTrend.AwayTeamAB : communityTrend.HomeTeamAB}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[homeScreenStyles.trendCard, { justifyContent: 'center', alignItems: 'center' }]}>
+              <View style={homeScreenStyles.trendHeader}>
+                <Ionicons name="analytics" size={14} color={SECONDARY_COLOR} />
+                <Text style={homeScreenStyles.trendLabel}>COMMUNITY "LOCK"</Text>
+              </View>
+              <Text style={{ color: TEXT_COLOR_SUB, fontStyle: 'italic' }}>Making picks...</Text>
+            </View>
+          )}
+        </View>
+
+
+
         {/* LEADERBOARD SECTION */}
         <View style={homeScreenStyles.leaderboardContainer}>
           <Text style={homeScreenStyles.sectionTitle}>🏆 LEADERBOARD</Text>
@@ -427,24 +666,6 @@ const HomeScreen = () => {
             </>
           )}
         </View>
-
-        {/* Featured Matchup (Optional/Bottom) */}
-        {featuredMatchup && (
-          <View style={homeScreenStyles.featuredCard}>
-            <Text style={[homeScreenStyles.sectionTitle, { marginBottom: 10 }]}>FEATURED MATCHUP</Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={homeScreenStyles.teamAbbr}>{featuredMatchup.AwayTeamAB}</Text>
-                <Text style={homeScreenStyles.projPoints}>{Number(featuredMatchup.AwayTeamProjectedPoints || 0).toFixed(1)}</Text>
-              </View>
-              <Text style={{ color: ACCENT_COLOR, fontWeight: 'bold' }}>VS</Text>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={homeScreenStyles.teamAbbr}>{featuredMatchup.HomeTeamAB}</Text>
-                <Text style={homeScreenStyles.projPoints}>{Number(featuredMatchup.HomeTeamProjectedPoints || 0).toFixed(1)}</Text>
-              </View>
-            </View>
-          </View>
-        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -550,8 +771,149 @@ const homeScreenStyles = StyleSheet.create({
   listRecord: { color: TEXT_COLOR_SUB, fontSize: 11 },
   listScore: { color: ACCENT_COLOR, fontWeight: 'bold', fontSize: 15 },
 
-  // Featured
-  featuredCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 15 },
+  // Featured (Legacy / Updated)
+  featuredCard: {
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,82,82,0.3)', // Red tint for matchup
+  },
+
+  // Showcase Features
+  showcaseSection: {
+    marginVertical: 15,
+    gap: 10,
+  },
+  mvpCard: {
+    backgroundColor: 'rgba(255, 215, 0, 0.1)', // Gold tint
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: GOLD_COLOR,
+    padding: 10,
+    flexDirection: 'column',
+  },
+  mvpHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 5,
+  },
+  mvpLabel: {
+    color: GOLD_COLOR,
+    fontWeight: 'bold',
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+  mvpContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 15,
+  },
+  mvpAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: GOLD_COLOR,
+  },
+  mvpName: {
+    color: TEXT_COLOR_MAIN,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  mvpScore: {
+    color: TEXT_COLOR_SUB,
+    fontSize: 12,
+  },
+
+  matchupRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  teamColumn: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  vsColumn: {
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vsText: {
+    color: ACCENT_COLOR,
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+  teamAbbrBig: {
+    color: TEXT_COLOR_MAIN,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  teamRecord: {
+    color: TEXT_COLOR_SUB,
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  featuredLabel: {
+    color: '#FF5252',
+    fontWeight: 'bold',
+    fontSize: 12,
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+
+  trendCard: {
+    backgroundColor: CARD_BACKGROUND,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  trendHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  trendLabel: {
+    color: SECONDARY_COLOR,
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  trendContent: {
+    gap: 5,
+  },
+  trendText: {
+    color: TEXT_COLOR_MAIN,
+    fontSize: 14,
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 3,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: ACCENT_COLOR,
+  },
+  trendVs: {
+    color: TEXT_COLOR_SUB,
+    fontSize: 10,
+    fontStyle: 'italic',
+    alignSelf: 'flex-end',
+  },
+
+  // Legacy / Misc
   teamAbbr: { color: TEXT_COLOR_MAIN, fontWeight: 'bold', fontSize: 16 },
   projPoints: { color: TEXT_COLOR_SUB, fontSize: 12 }
 });

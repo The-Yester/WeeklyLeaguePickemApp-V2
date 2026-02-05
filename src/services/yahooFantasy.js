@@ -216,6 +216,7 @@ const parseYahooMatchup = (yahooMatchup) => {
         GameTimeET: metadata.status === 'postevent' ? 'Final' : 'Scheduled',
 
         // Team 1 (Away)
+        AwayTeamKey: team1.team_key,
         AwayTeamName: team1.name,
         AwayTeamAB: team1.name ? team1.name.substring(0, 3).toUpperCase() : 'T1',
         AwayTeamLogo: team1.logo_url,
@@ -223,6 +224,7 @@ const parseYahooMatchup = (yahooMatchup) => {
         AwayTeamActualPoints: team1.points,
 
         // Team 2 (Home)
+        HomeTeamKey: team2.team_key,
         HomeTeamName: team2.name,
         HomeTeamAB: team2.name ? team2.name.substring(0, 3).toUpperCase() : 'T2',
         HomeTeamLogo: team2.logo_url,
@@ -235,7 +237,34 @@ const parseYahooMatchup = (yahooMatchup) => {
 
 const parseYahooTeam = (teamWrapper) => {
     // teamWrapper is an array/object mix
-    // Flatten it to find info
+    // Helper to recursively find team_logos
+    const findLogoUrl = (obj) => {
+        if (!obj || typeof obj !== 'object') return null;
+        if (obj.team_logos && Array.isArray(obj.team_logos) && obj.team_logos.length > 0) {
+            // Check for direct url (standard) or nested team_logo object (custom)
+            if (obj.team_logos[0].team_logo && obj.team_logos[0].team_logo.url) {
+                return obj.team_logos[0].team_logo.url;
+            }
+            if (obj.team_logos[0].url) {
+                return obj.team_logos[0].url;
+            }
+        }
+
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                const found = findLogoUrl(obj[key]);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+
+    // Use recursive search for logo
+    const logo_url = findLogoUrl(teamWrapper);
+
+
+
+    // Continue with existing parsing for other fields
     let info = {};
     let points = 0;
     let projected_points = 0;
@@ -244,36 +273,31 @@ const parseYahooTeam = (teamWrapper) => {
 
     parts.forEach(part => {
         if (Array.isArray(part)) {
-            // [CRITICAL FIX] Yahoo often puts the core metadata (name, logos) inside an array at index 0
-            // We need to recursively flatten or iterate this array too.
             part.forEach(sub => {
                 if (sub && typeof sub === 'object') {
                     if (sub.team_key) info = { ...info, ...sub };
                     if (sub.name) info = { ...info, ...sub };
-                    if (sub.team_logos) info = { ...info, ...sub };
                 }
             });
         } else if (typeof part === 'object' && part !== null) {
             if (part.team_key) info = { ...info, ...part };
-            // Check keys directly on object
             if (part.name) info = { ...info, name: part.name };
-            if (part.team_logos) info = { ...info, team_logos: part.team_logos };
 
             if (part.team_points) points = Number(part.team_points.total);
             if (part.team_projected_points) projected_points = Number(part.team_projected_points.total);
         }
     });
 
-    const logo_url = info.team_logos && info.team_logos[0] ? info.team_logos[0].url : null;
-
     if (!info.name) {
-        console.warn('⚠️ Parse Warning: Team Name missing. Key:', info.team_key, 'Raw:', JSON.stringify(teamWrapper).substring(0, 50) + "...");
+        console.warn('⚠️ Parse Warning: Team Name missing. Key:', info.team_key);
     }
+
+
 
     return {
         team_key: info.team_key,
         name: info.name,
-        logo_url,
+        logo_url, // Use the deep-found logo
         points,
         projected_points
     };
@@ -397,41 +421,35 @@ const parseYahooStandings = (standingsWrapper) => {
         if (key !== 'count') {
             const teamWrapper = standingsWrapper[key]?.team;
             if (teamWrapper) {
-                // teamWrapper is [ {metadata}, {standings: {outcome_totals: {wins, losses, ties}, points_for}} ]
-                // It's messy. Let's parse carefully.
+                // Reuse robust team parser for metadata/logos
+                const teamInfo = parseYahooTeam(teamWrapper);
 
-                let info = {};
+                // Extract standings stats separately as they might be deep
                 let stats = { wins: 0, losses: 0, ties: 0, points: 0 };
 
-                if (Array.isArray(teamWrapper)) {
-                    // Part 0: Metadata
-                    const metadata = teamWrapper[0];
-                    if (metadata) info = { ...metadata };
+                // Need to find 'team_standings' which parseYahooTeam doesn't look for explicitly yet
+                const parts = Array.isArray(teamWrapper) ? teamWrapper : Object.values(teamWrapper);
+                const standingsObj = parts.find(x => x && x.team_standings);
 
-                    // Part 2: Standings Data (usually index 2, sometimes 1?)
-                    // Let's find the object with 'team_standings'
-                    const standingsObj = teamWrapper.find(x => x && x.team_standings);
-                    if (standingsObj) {
-                        const ts = standingsObj.team_standings;
-                        if (ts.outcome_totals) {
-                            stats.wins = Number(ts.outcome_totals.wins);
-                            stats.losses = Number(ts.outcome_totals.losses);
-                            stats.ties = Number(ts.outcome_totals.ties);
-                        }
-                        if (ts.points_for) {
-                            stats.points = Number(ts.points_for);
-                        }
+                if (standingsObj) {
+                    const ts = standingsObj.team_standings;
+                    if (ts.outcome_totals) {
+                        stats.wins = Number(ts.outcome_totals.wins);
+                        stats.losses = Number(ts.outcome_totals.losses);
+                        stats.ties = Number(ts.outcome_totals.ties);
                     }
+                    if (ts.points_for) {
+                        stats.points = Number(ts.points_for);
+                    }
+                    // Rank is often here too
+                    if (ts.rank) teamInfo.rank = ts.rank;
                 }
 
-                // Logos is an array in metadata
-                const logo_url = info.team_logos && info.team_logos[0] ? info.team_logos[0].url : null;
-
                 teams.push({
-                    team_key: info.team_key,
-                    name: info.name,
-                    logo_url,
-                    rank: info.team_standings?.rank || 0, // Sometimes rank is top level?
+                    team_key: teamInfo.team_key,
+                    name: teamInfo.name,
+                    logo_url: teamInfo.logo_url,
+                    rank: teamInfo.rank || 0,
                     wins: stats.wins,
                     losses: stats.losses,
                     ties: stats.ties,
@@ -482,7 +500,59 @@ export const getLeagueStandings = async (leagueKey) => {
 
     } catch (error) {
         console.error('❌ Error in getLeagueStandings:', error);
-        // Return empty array instead of crashing, as this is secondary data
-        return [];
+        throw error;
     }
 };
+
+/**
+ * [NEW] Helper to filter League Standings for a specific Team Key
+ */
+export const getUserStanding = async (leagueKey, teamKey) => {
+    if (!leagueKey || !teamKey) return null;
+    try {
+        const standings = await getLeagueStandings(leagueKey);
+        const myTeam = standings.find(t => t.team_key === teamKey);
+        return myTeam || null;
+    } catch (e) {
+        console.error("Failed to get user standing:", e);
+        return null;
+    }
+};
+
+/**
+ * [NEW] Fetch User Global Profile Metadata
+ * Attempts to get 'Fantasy Level' or Rank if available.
+ */
+export const getUserProfile = async () => {
+    const performFetch = async (isRetry = false) => {
+        const headers = await getHeaders();
+        // Fetch broad user data. 
+        // We use 'games;game_codes=nfl' which nests leagues and teams automatically.
+        const url = `${YAHOO_BASE_URL}/users;use_login=1/games;game_codes=nfl?format=json`;
+        console.log(`👤 Fetching User Profile - ${isRetry ? 'Retry' : 'Attempt 1'}`);
+
+        const response = await fetch(url, { headers });
+
+        if (!response.ok) {
+            if (response.status === 401 && !isRetry) {
+                console.warn('⚠️ Yahoo 401 in User Profile: Token expired. Refreshing...');
+                await refreshYahooAccessToken();
+                return performFetch(true);
+            }
+            const text = await response.text();
+            throw new Error(`Yahoo API Wrapper Error: ${response.status} ${text}`);
+        }
+        return response.json();
+    };
+
+    try {
+        const data = await performFetch();
+        // Return the user object (wrapper)
+        return data?.fantasy_content?.users?.['0']?.user?.[0] || null;
+    } catch (error) {
+        console.error('❌ Error in getUserProfile:', error);
+        return null;
+    }
+};
+
+
