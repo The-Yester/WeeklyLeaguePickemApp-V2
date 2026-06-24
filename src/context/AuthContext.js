@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
                 unsubscribeDoc = onSnapshot(userDocRef, async (docSnap) => {
                     if (docSnap.exists()) {
                         const userProfile = docSnap.data();
-                        setUser({ uid: firebaseUser.uid, ...userProfile });
+                        setUser(prev => (prev && prev.uid === firebaseUser.uid ? { ...prev, ...userProfile } : { uid: firebaseUser.uid, ...userProfile }));
                         await AsyncStorage.setItem('currentUser', JSON.stringify({ uid: firebaseUser.uid, ...userProfile }));
 
                         if (userProfile.leagueKey) {
@@ -115,7 +115,7 @@ export function AuthProvider({ children }) {
                 await SecureStore.setItemAsync('yahoo_refresh_token', yahooRefreshToken);
                 setRefreshToken(yahooRefreshToken);
             }
-            setUser(userData);
+            setUser(prev => (prev && prev.uid === userData.uid ? { ...prev, ...userData } : userData));
             console.log('🧠 AuthProvider received profile:', userData);
         } catch (e) {
             console.error('AuthProvider: Sign in failed', e);
