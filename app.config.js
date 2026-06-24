@@ -4,7 +4,7 @@ export default {
     slug: "WeeklyLeaguePickemApp",
     owner: "ryester",
     scheme: "weeklyleaguepickemapp",
-    version: "1.0.0",
+    version: "2.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -17,7 +17,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.ryester.WeeklyLeaguePickemApp",
-      buildNumber: "1",
+      buildNumber: "2",
       icon: "./assets/icon.png",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,

@@ -194,14 +194,62 @@ const MakePicksScreen = ({ route }) => {
   }, []);
 
   const calculatePickDistribution = useCallback(async (week, matchups) => {
-    // Basic stub for distribution if needed, simplified for now as focused on styling
-    // Re-implementing logic if data exists
     if (!matchups || matchups.length === 0) return {};
 
-    // ... (Existing logic can be preserved or simplified. Assuming simple return for now to focus on UI)
-    // To restore functionality, we would query Firestore.
-    // For now returning empty to ensure no crashes during UI rewrite.
-    return {};
+    try {
+      const usersSnap = await getDocs(collection(db, "users"));
+      const distribution = {};
+
+      matchups.forEach(m => {
+        distribution[m.UniqueID] = { awayVotes: 0, homeVotes: 0, totalPicks: 0 };
+      });
+
+      await Promise.all(usersSnap.docs.map(async (userDoc) => {
+        const userId = userDoc.id;
+        const pickDocRef = doc(db, "users", userId, "picks", `week_${week}`);
+        const pickSnap = await getDoc(pickDocRef);
+        if (pickSnap.exists()) {
+          const userPicks = pickSnap.data();
+          for (const gameId in userPicks) {
+            const pickedAbbr = userPicks[gameId];
+            if (distribution[gameId]) {
+              const matchup = matchups.find(m => m.UniqueID === gameId);
+              if (matchup) {
+                if (pickedAbbr === matchup.AwayTeamAB) {
+                  distribution[gameId].awayVotes++;
+                  distribution[gameId].totalPicks++;
+                } else if (pickedAbbr === matchup.HomeTeamAB) {
+                  distribution[gameId].homeVotes++;
+                  distribution[gameId].totalPicks++;
+                }
+              }
+            }
+          }
+        }
+      }));
+
+      const finalDist = {};
+      for (const gameId in distribution) {
+        const d = distribution[gameId];
+        if (d.totalPicks > 0) {
+          finalDist[gameId] = {
+            awayPercent: Math.round((d.awayVotes / d.totalPicks) * 100),
+            homePercent: Math.round((d.homeVotes / d.totalPicks) * 100),
+            totalPicks: d.totalPicks
+          };
+        } else {
+          finalDist[gameId] = {
+            awayPercent: 0,
+            homePercent: 0,
+            totalPicks: 0
+          };
+        }
+      }
+      return finalDist;
+    } catch (err) {
+      console.error("Failed to calculate pick distribution:", err);
+      return {};
+    }
   }, []);
 
   const loadDataForWeek = useCallback(async (week) => {
@@ -242,13 +290,17 @@ const MakePicksScreen = ({ route }) => {
       setCurrentPicks(picksData);
       setSavedPicks(picksData);
 
+      // Fetch pick distributions
+      const dist = await calculatePickDistribution(week, matchups);
+      setPickDistribution(dist);
+
     } catch (e) {
       console.error("MakePicksScreen: Failed to load data:", e);
       setError("Could not load matchups or your picks.");
     } finally {
       setIsLoading(false);
     }
-  }, [loggedInUser, leagueKey, fetchYahooMatchupsForWeek]);
+  }, [loggedInUser, leagueKey, fetchYahooMatchupsForWeek, calculatePickDistribution]);
 
   useFocusEffect(
     useCallback(() => {
@@ -277,6 +329,10 @@ const MakePicksScreen = ({ route }) => {
       await setDoc(weekPicksDocRef, currentPicks);
       setSavedPicks(currentPicks);
       Alert.alert("Success", `Picks for Week ${currentWeek} saved!`);
+
+      // Update distribution in UI immediately
+      const dist = await calculatePickDistribution(currentWeek, currentWeekMatchups);
+      setPickDistribution(dist);
     } catch (e) {
       console.error("Failed to save picks:", e);
       Alert.alert("Error", "Could not save your picks. Please try again.");
@@ -443,12 +499,47 @@ const MakePicksScreen = ({ route }) => {
                   standings={standingsMap}
                 />
 
-                {/* Distribution Bar (Optional visual flair) */}
-                {/* 
-                <View style={styles.distributionBarContainer}>
-                   ... (Simplifying for now to keep clean look unless requested back)
-                </View> 
-                */}
+                {/* Distribution Bar */}
+                {distribution.totalPicks > 0 ? (
+                  <View style={styles.distributionContainer}>
+                    <View style={styles.distributionBar}>
+                      <View
+                        style={[
+                          styles.distributionSection,
+                          {
+                            backgroundColor: AWAY_DISTRIBUTION_COLOR,
+                            flex: distribution.awayPercent || 1,
+                          },
+                        ]}
+                      >
+                        {distribution.awayPercent > 0 && (
+                          <Text style={styles.distributionText}>{distribution.awayPercent}%</Text>
+                        )}
+                      </View>
+                      <View
+                        style={[
+                          styles.distributionSection,
+                          {
+                            backgroundColor: HOME_DISTRIBUTION_COLOR,
+                            flex: distribution.homePercent || 1,
+                          },
+                        ]}
+                      >
+                        {distribution.homePercent > 0 && (
+                          <Text style={[styles.distributionText, { textAlign: 'right' }]}>{distribution.homePercent}%</Text>
+                        )}
+                      </View>
+                    </View>
+                    <Text style={styles.totalPicksText}>{distribution.totalPicks} total pick(s)</Text>
+                  </View>
+                ) : (
+                  <View style={styles.distributionContainer}>
+                    <View style={[styles.distributionBar, { backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' }]}>
+                      <Text style={[styles.distributionText, { fontSize: 10, opacity: 0.5 }]}>No picks placed yet</Text>
+                    </View>
+                    <Text style={styles.totalPicksText}>0 total pick(s)</Text>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -706,6 +797,36 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
     textAlign: 'right',
+  },
+
+  // Pick Distribution Bar Styles
+  distributionContainer: {
+    marginTop: 15,
+    alignItems: 'center',
+    width: '100%',
+  },
+  distributionBar: {
+    flexDirection: 'row',
+    height: 18,
+    borderRadius: 9,
+    overflow: 'hidden',
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  distributionSection: {
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  distributionText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  totalPicksText: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    fontStyle: 'italic',
   },
 });
 
