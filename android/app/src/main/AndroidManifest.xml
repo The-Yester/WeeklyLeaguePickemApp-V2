@@ -27,11 +27,13 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="weeklyleaguepickemapp"/>
         <data android:scheme="exp+weeklyleaguepickemapp"/>
+        <data android:scheme="com.ryester.weeklyleaguepickemapp"/>
       </intent-filter>
       <intent-filter data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
         <data android:scheme="weeklyleaguepickemapp" android:host="yahoo"/>
         <data android:scheme="exp+weeklyleaguepickemapp"/>
+        <data android:scheme="com.ryester.weeklyleaguepickemapp"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>

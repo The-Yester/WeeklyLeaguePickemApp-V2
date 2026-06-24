@@ -40,6 +40,13 @@ export default {
             host: "yahoo" // Optional: adds specificity, e.g., weeklyleaguepickemapp://yahoo
           },
           category: ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          action: "VIEW",
+          data: {
+            scheme: "com.ryester.weeklyleaguepickemapp"
+          },
+          category: ["BROWSABLE", "DEFAULT"]
         }
       ],
       jsEngine: "jsc",

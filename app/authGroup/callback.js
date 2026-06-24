@@ -142,10 +142,6 @@ export default function YahooCallback() {
         }
 
         // 6) Persist session for your app
-        const { setAccessToken, setRefreshToken } = useAuth(); // Ensure this is available or moved inside logic if hook rules apply
-
-        // Wait, callback.js is a component, so we can use hook at top level.
-        // We need to refactor slightly to get setAccessToken from hook at top.
 
         await SecureStore.setItemAsync('yahoo_access_token', tokenData.yahoo_access_token);
         if (tokenData.yahoo_refresh_token) {

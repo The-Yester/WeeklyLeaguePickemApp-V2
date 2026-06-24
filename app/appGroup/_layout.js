@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { Alert, View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Alert, View, TouchableOpacity, StyleSheet, Image, Text } from 'react-native';
 import * as Linking from 'expo-linking';
+import { useAuth } from '../../src/context/AuthContext';
 
 // Define explicit colors to ensure they exist
 const COLORS = {
@@ -58,6 +59,9 @@ const createTabPressListener = (router, path, isExternal = false) => ({
 
 export default function AppTabsLayout() {
   const router = useRouter();
+  const { user } = useAuth();
+
+  const leagueName = user?.leagueName || 'The League';
 
   // NOTE: "useUnsavedChanges" was missing, so we are disabling that feature for now 
   // to prevent the white-screen crash.
@@ -89,22 +93,52 @@ export default function AppTabsLayout() {
     >
       <Tabs.Screen
         name="home"
-        options={{ title: 'The League' }}
+        options={{
+          title: leagueName,
+          headerStyle: {
+            backgroundColor: '#10B981',
+          },
+          headerTitle: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
+              <Image
+                source={require('../../assets/Pickem_Logo.png')}
+                style={{ width: 44, height: 44, marginRight: 8, borderRadius: 22 }}
+                resizeMode="cover"
+              />
+              <Text 
+                style={{ color: '#FFFFFF', fontSize: 22, fontWeight: 'bold', flexShrink: 1 }} 
+                numberOfLines={1} 
+                ellipsizeMode="tail"
+              >
+                {leagueName}
+              </Text>
+            </View>
+          ),
+        }}
         listeners={createTabPressListener(router, '/appGroup/home')}
       />
       <Tabs.Screen
         name="makepicks"
-        options={{ title: 'Make Picks' }}
+        options={{
+          title: 'Make Picks',
+          headerShown: false
+        }}
         listeners={createTabPressListener(router, '/appGroup/makepicks')}
       />
       <Tabs.Screen
         name="myPicks"
-        options={{ title: 'My Picks' }}
+        options={{
+          title: 'My Picks',
+          headerShown: false
+        }}
         listeners={createTabPressListener(router, '/appGroup/myPicks')}
       />
       <Tabs.Screen
         name="stats"
-        options={{ title: 'Stats' }}
+        options={{
+          title: 'Stats',
+          headerShown: false
+        }}
         listeners={createTabPressListener(router, '/appGroup/stats')}
       />
       <Tabs.Screen
@@ -125,13 +159,6 @@ export default function AppTabsLayout() {
           href: null,
           title: 'Settings',
           headerShown: false
-        }}
-      />
-      <Tabs.Screen
-        name="changePassword"
-        options={{
-          href: null,
-          title: 'Change Password'
         }}
       />
       <Tabs.Screen

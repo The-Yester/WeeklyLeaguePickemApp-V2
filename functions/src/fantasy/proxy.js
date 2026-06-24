@@ -1,4 +1,5 @@
 // functions/src/fantasy/proxy.js
+const functions = require('firebase-functions');
 const { onCall } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 

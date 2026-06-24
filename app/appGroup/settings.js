@@ -39,24 +39,24 @@ const SWITCH_TRACK_COLOR_TRUE = PRIMARY_COLOR;
 // Notification will be 1 hour before this lockTime.
 // Using YYYY-MM-DD and 24-hour time for robust parsing.
 const PICKS_LOCK_SCHEDULE = [
-  { week: 1, date: '2025-09-04', lockTime: '19:15' },
-  { week: 2, date: '2025-09-11', lockTime: '19:15' },
-  { week: 3, date: '2025-09-18', lockTime: '19:15' },
-  { week: 4, date: '2025-09-25', lockTime: '19:15' },
-  { week: 5, date: '2025-10-02', lockTime: '19:15' },
-  { week: 6, date: '2025-10-09', lockTime: '19:15' },
-  { week: 7, date: '2025-10-16', lockTime: '19:15' },
-  { week: 8, date: '2025-10-23', lockTime: '19:15' },
-  { week: 9, date: '2025-10-30', lockTime: '19:15' },
-  { week: 10, date: '2025-11-06', lockTime: '19:15' },
-  { week: 11, date: '2025-11-13', lockTime: '19:15' },
-  { week: 12, date: '2025-11-20', lockTime: '19:15' },
-  { week: 13, date: '2025-11-27', lockTime: '19:15' },
-  { week: 14, date: '2025-12-04', lockTime: '19:15' },
-  { week: 15, date: '2025-12-11', lockTime: '19:15' },
-  { week: 16, date: '2025-12-18', lockTime: '19:15' },
-  { week: 17, date: '2025-12-25', lockTime: '12:00' },
-  { week: 18, date: '2026-01-01', lockTime: '12:00' },
+  { week: 1, date: '2026-09-09', lockTime: '19:15' },
+  { week: 2, date: '2026-09-17', lockTime: '19:15' },
+  { week: 3, date: '2026-09-24', lockTime: '19:15' },
+  { week: 4, date: '2026-10-01', lockTime: '19:15' },
+  { week: 5, date: '2026-10-08', lockTime: '19:15' },
+  { week: 6, date: '2026-10-15', lockTime: '19:15' },
+  { week: 7, date: '2026-10-22', lockTime: '19:15' },
+  { week: 8, date: '2026-10-29', lockTime: '19:15' },
+  { week: 9, date: '2026-11-05', lockTime: '19:15' },
+  { week: 10, date: '2026-11-12', lockTime: '19:15' },
+  { week: 11, date: '2026-11-19', lockTime: '19:15' },
+  { week: 12, date: '2026-11-26', lockTime: '19:15' },
+  { week: 13, date: '2026-12-03', lockTime: '19:15' },
+  { week: 14, date: '2026-12-10', lockTime: '19:15' },
+  { week: 15, date: '2026-12-17', lockTime: '19:15' },
+  { week: 16, date: '2026-12-24', lockTime: '12:00' },
+  { week: 17, date: '2026-12-31', lockTime: '12:00' },
+  { week: 18, date: '2027-01-07', lockTime: '12:00' },
 ];
 
 const PICK_REMINDER_NOTIFICATION_ID_PREFIX = 'weeklyPickReminder_week_';
@@ -188,12 +188,16 @@ const SettingsScreen = () => {
               // 1. Delete Firestore Data
               const picksRef = collection(db, "users", firebaseUser.uid, "picks");
               const commentsRef = collection(db, "users", firebaseUser.uid, "comments");
+              const oauthRef = collection(db, "users", firebaseUser.uid, "oauth");
 
               const picksSnap = await getDocs(picksRef);
               for (const d of picksSnap.docs) await deleteDoc(d.ref);
 
               const commentsSnap = await getDocs(commentsRef);
               for (const d of commentsSnap.docs) await deleteDoc(d.ref);
+
+              const oauthSnap = await getDocs(oauthRef);
+              for (const d of oauthSnap.docs) await deleteDoc(d.ref);
 
               await deleteDoc(doc(db, "users", firebaseUser.uid));
 
@@ -206,7 +210,32 @@ const SettingsScreen = () => {
             } catch (error) {
               console.error("Delete failed:", error);
               if (error.code === 'auth/requires-recent-login') {
-                Alert.alert("Security Check", "Please log out and log back in to delete your account.");
+                try {
+                  await AsyncStorage.setItem('pendingDeleteUid', firebaseUser.uid);
+                  Alert.alert(
+                    "Security Verification Required",
+                    "For security reasons, deleting your account requires a recent login. Please log in again to verify your identity, and your account will be immediately deleted.",
+                    [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                        onPress: async () => {
+                          await AsyncStorage.removeItem('pendingDeleteUid');
+                        }
+                      },
+                      {
+                        text: "Log In to Delete",
+                        style: "destructive",
+                        onPress: async () => {
+                          await signOut();
+                        }
+                      }
+                    ]
+                  );
+                } catch (e) {
+                  console.error("Failed to set pending delete uid:", e);
+                  Alert.alert("Error", "Could not proceed with account deletion. Please try again.");
+                }
               } else {
                 Alert.alert("Error", "Could not delete account. Contact support.");
               }
@@ -271,11 +300,6 @@ const SettingsScreen = () => {
             switchValue={arePickRemindersEnabled}
             onSwitchValueChange={handleReminderToggle}
           />
-          <SettingItem
-            iconName="lock-closed-outline"
-            title="Change Password"
-            href="/appGroup/changePassword"
-          />
         </View>
 
         {/* Support */}
@@ -284,12 +308,12 @@ const SettingsScreen = () => {
           <SettingItem
             iconName="help-circle-outline"
             title="Help & FAQ"
-            onPress={() => Linking.openURL('https://support.google.com')} // Placeholder
+            onPress={() => Linking.openURL('https://sites.google.com/view/weekly-pick-app-help/home')}
           />
           <SettingItem
             iconName="mail-outline"
             title="Contact Support"
-            onPress={() => Linking.openURL('mailto:support@pickemapp.com')}
+            onPress={() => Linking.openURL('mailto:topo.rating@gmail.com')}
           />
         </View>
 
@@ -299,12 +323,12 @@ const SettingsScreen = () => {
           <SettingItem
             iconName="document-text-outline"
             title="Terms of Service"
-            onPress={() => Linking.openURL('https://example.com/terms')}
+            onPress={() => Linking.openURL('https://sites.google.com/view/leagueterms/home')}
           />
           <SettingItem
             iconName="shield-checkmark-outline"
             title="Privacy Policy"
-            onPress={() => Linking.openURL('https://example.com/privacy')}
+            onPress={() => Linking.openURL('https://sites.google.com/view/the-league-pickem-privacy-poli/home')}
           />
         </View>
 
@@ -324,7 +348,7 @@ const SettingsScreen = () => {
           />
         </View>
 
-        <Text style={styles.versionText}>Version 1.0.0</Text>
+        <Text style={styles.versionText}>Version 2.0.0</Text>
       </ScrollView>
     </View>
   );

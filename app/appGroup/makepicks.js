@@ -28,24 +28,24 @@ const MAX_WEEKS = 18;
 const FORCE_UNLOCK_ALL_PICKS = true;
 
 const PICKS_LOCK_SCHEDULE = [
-  { week: 1, date: '2025-09-04', lockTime: '19:15' },
-  { week: 2, date: '2025-09-11', lockTime: '19:15' },
-  { week: 3, date: '2025-09-18', lockTime: '19:15' },
-  { week: 4, date: '2025-09-25', lockTime: '19:15' },
-  { week: 5, date: '2025-10-02', lockTime: '19:15' },
-  { week: 6, date: '2025-10-09', lockTime: '19:15' },
-  { week: 7, date: '2025-10-16', lockTime: '19:15' },
-  { week: 8, date: '2025-10-23', lockTime: '19:15' },
-  { week: 9, date: '2025-10-30', lockTime: '19:15' },
-  { week: 10, date: '2025-11-06', lockTime: '19:15' },
-  { week: 11, date: '2025-11-13', lockTime: '19:15' },
-  { week: 12, date: '2025-11-20', lockTime: '19:15' },
-  { week: 13, date: '2025-11-27', lockTime: '19:15' },
-  { week: 14, date: '2025-12-04', lockTime: '19:15' },
-  { week: 15, date: '2025-12-11', lockTime: '19:15' },
-  { week: 16, date: '2025-12-18', lockTime: '19:15' },
-  { week: 17, date: '2025-12-25', lockTime: '12:00' },
-  { week: 18, date: '2026-01-01', lockTime: '12:00' },
+  { week: 1, date: '2026-09-09', lockTime: '19:15' },
+  { week: 2, date: '2026-09-17', lockTime: '19:15' },
+  { week: 3, date: '2026-09-24', lockTime: '19:15' },
+  { week: 4, date: '2026-10-01', lockTime: '19:15' },
+  { week: 5, date: '2026-10-08', lockTime: '19:15' },
+  { week: 6, date: '2026-10-15', lockTime: '19:15' },
+  { week: 7, date: '2026-10-22', lockTime: '19:15' },
+  { week: 8, date: '2026-10-29', lockTime: '19:15' },
+  { week: 9, date: '2026-11-05', lockTime: '19:15' },
+  { week: 10, date: '2026-11-12', lockTime: '19:15' },
+  { week: 11, date: '2026-11-19', lockTime: '19:15' },
+  { week: 12, date: '2026-11-26', lockTime: '19:15' },
+  { week: 13, date: '2026-12-03', lockTime: '19:15' },
+  { week: 14, date: '2026-12-10', lockTime: '19:15' },
+  { week: 15, date: '2026-12-17', lockTime: '19:15' },
+  { week: 16, date: '2026-12-24', lockTime: '12:00' },
+  { week: 17, date: '2026-12-31', lockTime: '12:00' },
+  { week: 18, date: '2027-01-07', lockTime: '12:00' },
 ];
 
 // --- THEME COLORS (Navy / Cyan / Green) ---
@@ -161,16 +161,6 @@ const MakePicksScreen = ({ route }) => {
     };
   }, [arePicksDirty, setHasUnsavedChanges]);
 
-  // Update Header Title Dynamically
-  useEffect(() => {
-    // Custom header implemented in standard render
-    navigation.setOptions({
-      title: `Week ${currentWeek}`,
-      headerStyle: { backgroundColor: PRIMARY_COLOR },
-      headerTintColor: TEXT_COLOR_MAIN,
-      headerTitleStyle: { fontWeight: 'bold' }
-    });
-  }, [currentWeek, navigation]);
 
   const checkLockStatus = (week) => {
     // [OVERRIDE] If debug flag is set, always unlock

@@ -1,4 +1,5 @@
 // app/_layout.js
+import '../polyfills';
 import React, { useEffect } from 'react';
 import { Stack, SplashScreen } from 'expo-router';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
@@ -7,7 +8,6 @@ import { ActivityIndicator, View, StatusBar, StyleSheet, Text, Linking, LogBox }
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as WebBrowser from 'expo-web-browser';
 import { router } from 'expo-router';
-import '../polyfills';
 
 LogBox.ignoreLogs([
     "The provided Linking scheme 'exp' does not appear",

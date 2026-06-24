@@ -1,4 +1,6 @@
 // polyfills.ts
+require('text-encoding-polyfill');
+
 
 if (!Array.prototype.findLast) {
   Array.prototype.findLast = function <T>(

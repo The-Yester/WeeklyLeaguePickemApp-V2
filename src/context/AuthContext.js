@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useSegments, SplashScreen } from 'expo-router';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut, signInAnonymously } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import * as SecureStore from 'expo-secure-store';
 
 const AuthContext = createContext(null);
@@ -27,52 +27,55 @@ export function AuthProvider({ children }) {
     const router = useRouter();
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        let unsubscribeDoc = null;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
             console.log('👀 onAuthStateChanged fired:', firebaseUser);
 
-            if (firebaseUser) {
-                try {
-                    const userDocRef = doc(db, 'users', firebaseUser.uid);
-                    const userDoc = await getDoc(userDocRef);
+            if (unsubscribeDoc) {
+                unsubscribeDoc();
+                unsubscribeDoc = null;
+            }
 
-                    if (userDoc.exists()) {
-                        const userProfile = userDoc.data();
+            if (firebaseUser) {
+                const userDocRef = doc(db, 'users', firebaseUser.uid);
+                
+                // Set up real-time listener for the user profile document
+                unsubscribeDoc = onSnapshot(userDocRef, async (docSnap) => {
+                    if (docSnap.exists()) {
+                        const userProfile = docSnap.data();
                         setUser({ uid: firebaseUser.uid, ...userProfile });
                         await AsyncStorage.setItem('currentUser', JSON.stringify({ uid: firebaseUser.uid, ...userProfile }));
 
-                        // [NEW] Load leagueKey if exists
                         if (userProfile.leagueKey) {
                             setLeagueKey(userProfile.leagueKey);
                             await AsyncStorage.setItem('leagueKey', userProfile.leagueKey);
                         } else {
-                            // Check async storage backup?
                             const stored = await AsyncStorage.getItem('leagueKey');
                             if (stored) setLeagueKey(stored);
                         }
-
-                        console.log('AuthProvider: User profile loaded.', userProfile.username);
+                        console.log('AuthProvider: User profile loaded/updated.', userProfile.username || userProfile.teamName);
                     } else {
-                        console.warn('AuthProvider: Firebase user exists, but no profile found in Firestore.');
-                        // If no profile, we treat as logged out or prompt creation?
-                        // For now, let's just log out or set user undefined to force login
-                        // actually, the user IS authenticated with Firebase, just missing profile.
-                        // We should let them be "user" but perhaps redirect to setup?
-                        // Let's set user to a minimal object
+                        console.warn('AuthProvider: Firebase user exists, but no profile found in Firestore yet.');
                         setUser({ uid: firebaseUser.uid, username: 'New User' });
                     }
-                } catch (e) {
-                    console.error('AuthProvider: Error fetching user profile:', e);
-                    setUser(undefined);
-                }
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error('AuthProvider: Error listening to user profile:', error);
+                    setIsLoading(false);
+                });
             } else {
                 console.log('AuthProvider: No Firebase user found.');
                 setUser(undefined);
+                setLeagueKey(null);
+                setIsLoading(false);
             }
-
-            setIsLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribeAuth();
+            if (unsubscribeDoc) unsubscribeDoc();
+        };
     }, []);
 
     useEffect(() => {
@@ -126,6 +129,12 @@ export function AuthProvider({ children }) {
             await SecureStore.deleteItemAsync('yahoo_refresh_token');
             setAccessToken(null);
             setRefreshToken(null);
+            setLeagueKey(null);
+            await AsyncStorage.removeItem('currentUser');
+            await AsyncStorage.removeItem('leagueKey');
+            await AsyncStorage.removeItem('pickReminderEnabled');
+            await AsyncStorage.removeItem('yahoo_access_token');
+            await AsyncStorage.removeItem('yahoo_refresh_token');
         } catch (e) {
             console.error('AuthProvider: Sign out failed', e);
         }

@@ -11,21 +11,19 @@ import {
 } from 'react-native';
 import { useYahooAuth } from '../../src/hooks/useYahooAuth';
 import { useLocalSearchParams, router } from 'expo-router';
-import { nanoid } from 'nanoid/non-secure';
-import * as SecureStore from 'expo-secure-store';
-import { useAuth } from '../../src/context/AuthContext'; // Fixed path alias
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { makeRedirectUri } from 'expo-auth-session';
+import { useAuth } from '../../src/context/AuthContext';
 import * as Google from 'expo-auth-session/providers/google';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID } from '../../src/config/google';
-import { auth, db } from '../../src/config/firebase'; // Ensure db is imported
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'; // Added imports
+import { auth, db } from '../../src/config/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { BlurView } from 'expo-blur';
+import { FontAwesome } from '@expo/vector-icons';
 
 export default function Login() {
-    const { isLoading, promptAsync, isReady, isExpoGo, request } = useYahooAuth();
+    const { isLoading, promptAsync, isReady } = useYahooAuth();
     const { code } = useLocalSearchParams();
-    const { user, signIn } = useAuth();
+    const { signIn } = useAuth();
 
     const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
         iosClientId: GOOGLE_IOS_CLIENT_ID,
@@ -68,9 +66,7 @@ export default function Login() {
                     }
 
                     // Explicitly update AuthContext to avoid race condition/missing profile warning
-                    // Pass null for Yahoo tokens as this is Google Auth (Yahoo linked later)
                     await signIn(userData, null, null);
-
                 })
                 .catch((error) => {
                     console.error('❌ Google Sign-In error', error);
@@ -79,19 +75,12 @@ export default function Login() {
         }
     }, [googleResponse]);
 
-
-
     const handleYahooLogin = async () => {
-        // We rely on useYahooAuth to handle the request/crypto generation.
-        // We do NOT need to manually set yahoo_redirect_uri here as useYahooAuth 
-        // uses its own constant for the Proxy flow.
-
-        const result = await promptAsync(); // Call without args to use hook defaults (Proxy)
+        const result = await promptAsync();
 
         if (!result || result.type !== 'success') {
-            // Did the user cancel?
             if (result?.type === 'dismiss') {
-                // optional logging
+                // User cancelled
             } else {
                 Alert.alert("Yahoo Login Failed", "Could not launch Yahoo login. Please try again.");
             }
@@ -100,54 +89,50 @@ export default function Login() {
 
     return (
         <View style={styles.container}>
-            <Image source={require('../../assets/Pickem_Logo.png')} style={styles.logo} />
-            <Text style={styles.title}>Welcome to Weekly League Pick'em</Text>
+            {/* Futuristic Glowing Background Accents */}
+            <View style={styles.glowCircle1} />
+            <View style={styles.glowCircle2} />
+            <View style={styles.glowCircle3} />
 
-            {isLoading ? (
-                <ActivityIndicator size="large" color="#6001d2" />
-            ) : (
-                <TouchableOpacity
-                    onPress={handleYahooLogin}
-                    disabled={!isReady}
-                    style={styles.buttonWrapper}
-                >
-                    <Image
-                        source={require('../../assets/images/Round_Primary_(dark).png')}
-                        style={[styles.buttonImage, !isReady && styles.disabled]}
-                        resizeMode="contain"
-                    />
-                </TouchableOpacity>
-            )}
+            {/* Glassmorphic Card Wrapper */}
+            <View style={styles.glassCard}>
+                <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
 
-            {/* Google Sign-In Button */}
-            <TouchableOpacity
-                onPress={() => googlePromptAsync()}
-                style={[styles.buttonWrapper, { marginTop: 20 }]}
-            >
-                <Image
-                    // Using a placeholder or reusing style for now, ideally we'd have a Google button asset or style
-                    source={{ uri: 'https://developers.google.com/identity/images/btn_google_signin_dark_normal_web.png' }}
-                    style={{ width: '100%', height: '100%', resizeMode: 'contain' }}
-                />
-                {/* Fallback Text if image fails or just for clarity during dev */}
-                <View style={StyleSheet.absoluteFill}>
-                    <Text style={{ color: 'transparent' }}>Sign in with Google</Text>
+                <View style={styles.logoContainer}>
+                    <Image source={require('../../assets/Pickem_Logo.png')} style={styles.logo} />
                 </View>
-            </TouchableOpacity>
 
-            {/* DEVELOPER BYPASS BUTTON */}
-            <TouchableOpacity
-                onPress={() => {
-                    console.log("⚡ Skipping Auth (Developer Mode)");
-                    router.replace('/appGroup/home');
-                }}
-                style={{ marginTop: 30, padding: 10, backgroundColor: '#333', borderRadius: 5 }}
-            >
-                <Text style={{ color: '#00FF00', fontWeight: 'bold' }}>[DEV] Skip to App</Text>
-            </TouchableOpacity>
+                <Text style={styles.title}>Weekly League Pick'em</Text>
+                <Text style={styles.subtitle}>Predict. Compete. Win.</Text>
 
-            <View style={{ height: 20 }} />
+                {isLoading ? (
+                    <View style={styles.loaderContainer}>
+                        <ActivityIndicator size="large" color="#FFFFFF" />
+                        <Text style={styles.loaderText}>Authenticating...</Text>
+                    </View>
+                ) : (
+                    <View style={styles.buttonContainer}>
+                        {/* Yahoo Sign-In Button */}
+                        <TouchableOpacity
+                            onPress={handleYahooLogin}
+                            disabled={!isReady}
+                            style={[styles.loginButton, styles.yahooButton, !isReady && styles.disabledButton]}
+                        >
+                            <FontAwesome name="yahoo" size={20} color="#FFFFFF" style={styles.buttonIcon} />
+                            <Text style={styles.yahooButtonText}>Sign in with Yahoo</Text>
+                        </TouchableOpacity>
 
+                        {/* Google Sign-In Button */}
+                        <TouchableOpacity
+                            onPress={() => googlePromptAsync()}
+                            style={[styles.loginButton, styles.googleButton]}
+                        >
+                            <FontAwesome name="google" size={18} color="#EA4335" style={styles.buttonIcon} />
+                            <Text style={styles.googleButtonText}>Sign in with Google</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
         </View>
     );
 }
@@ -155,33 +140,150 @@ export default function Login() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#0f172a', // Deep slate background
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
-        backgroundColor: '#1f3668',
     },
-    logo: {
+    glowCircle1: {
+        position: 'absolute',
+        top: '15%',
+        right: '-15%',
+        width: 280,
+        height: 280,
+        borderRadius: 140,
+        backgroundColor: '#10b981', // Emerald Green matching brand
+        opacity: 0.15,
+    },
+    glowCircle2: {
+        position: 'absolute',
+        bottom: '15%',
+        left: '-15%',
         width: 320,
         height: 320,
-        resizeMode: 'contain',
-        marginBottom: 30,
+        borderRadius: 160,
+        backgroundColor: '#1e3a8a', // Deep navy/blue
+        opacity: 0.22,
     },
-    title: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        marginBottom: 30,
-        textAlign: 'center',
-        color: '#FFFFFF',
+    glowCircle3: {
+        position: 'absolute',
+        top: '40%',
+        left: '10%',
+        width: 160,
+        height: 160,
+        borderRadius: 80,
+        backgroundColor: '#7c3aed', // Purple accent for Yahoo
+        opacity: 0.12,
     },
-    buttonWrapper: {
-        width: 240,
-        height: 60,
+    glassCard: {
+        width: '95%',
+        maxWidth: 380,
+        borderRadius: 32,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.14)',
+        backgroundColor: 'rgba(15, 23, 42, 0.45)', // Sleek semi-transparent dark container
+        paddingVertical: 45,
+        paddingHorizontal: 28,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 16 },
+        shadowOpacity: 0.4,
+        shadowRadius: 24,
+        elevation: 10,
+        overflow: 'hidden', // Keep blur within rounded borders
     },
-    buttonImage: {
+    logoContainer: {
+        width: 180,
+        height: 180,
+        borderRadius: 90,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.18)',
+        backgroundColor: '#1f3668', // Matches the logo background color perfectly to blend corners
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 28,
+        overflow: 'hidden', // Clips the square image into a circle
+        shadowColor: '#10b981', // Emerald green brand glow
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+        elevation: 6,
+    },
+    logo: {
         width: '100%',
         height: '100%',
+        resizeMode: 'cover',
     },
-    disabled: {
-        opacity: 0.5,
+    title: {
+        fontSize: 24,
+        fontWeight: '900',
+        color: '#FFFFFF',
+        textAlign: 'center',
+        marginBottom: 6,
+        letterSpacing: 0.5,
+    },
+    subtitle: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.5)',
+        textAlign: 'center',
+        marginBottom: 36,
+        fontWeight: '600',
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+    },
+    buttonContainer: {
+        width: '100%',
+    },
+    loginButton: {
+        width: '100%',
+        height: 56,
+        borderRadius: 18,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    yahooButton: {
+        backgroundColor: '#6001d2', // Yahoo Purple
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    googleButton: {
+        backgroundColor: '#FFFFFF', // Clean Google White
+        marginTop: 16,
+    },
+    buttonIcon: {
+        marginRight: 14,
+    },
+    yahooButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.3,
+    },
+    googleButtonText: {
+        color: '#1f2937', // Slate dark text
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.3,
+    },
+    disabledButton: {
+        opacity: 0.4,
+    },
+    loaderContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+    },
+    loaderText: {
+        marginTop: 12,
+        color: 'rgba(255, 255, 255, 0.7)',
+        fontSize: 15,
+        fontWeight: '600',
     },
 });

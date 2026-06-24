@@ -192,8 +192,8 @@ const MyPicksScreen = () => {
           <View style={styles.matchupInfo}>
             {/* Away Team */}
             <View style={[styles.teamRow, { justifyContent: 'flex-end' }]}>
-              <Text style={[styles.teamNameText, item.userPickedTeamAbbr === item.AwayTeamAB && styles.pickedTeamText]}>
-                {item.AwayTeamAB}
+              <Text style={[styles.teamNameText, item.userPickedTeamAbbr === item.AwayTeamAB && styles.pickedTeamText, { textAlign: 'right' }]} numberOfLines={2} ellipsizeMode="tail">
+                {item.AwayTeamName}
               </Text>
               {item.AwayTeamLogo && <Image source={{ uri: item.AwayTeamLogo }} style={styles.teamLogo} />}
             </View>
@@ -203,8 +203,8 @@ const MyPicksScreen = () => {
             {/* Home Team */}
             <View style={[styles.teamRow, { justifyContent: 'flex-start' }]}>
               {item.HomeTeamLogo && <Image source={{ uri: item.HomeTeamLogo }} style={styles.teamLogo} />}
-              <Text style={[styles.teamNameText, item.userPickedTeamAbbr === item.HomeTeamAB && styles.pickedTeamText]}>
-                {item.HomeTeamAB}
+              <Text style={[styles.teamNameText, item.userPickedTeamAbbr === item.HomeTeamAB && styles.pickedTeamText, { textAlign: 'left' }]} numberOfLines={2} ellipsizeMode="tail">
+                {item.HomeTeamName}
               </Text>
             </View>
           </View>
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   teamLogo: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fff' },
-  teamNameText: { fontSize: 18, fontWeight: 'bold', color: TEXT_COLOR_SUB },
+  teamNameText: { fontSize: 14, fontWeight: 'bold', color: TEXT_COLOR_SUB, flex: 1 },
   pickedTeamText: { color: SECONDARY_COLOR, textShadowColor: SECONDARY_COLOR, textShadowRadius: 5 },
 
   vsTextSmall: { fontSize: 12, fontWeight: 'bold', color: '#555', marginHorizontal: 10 },

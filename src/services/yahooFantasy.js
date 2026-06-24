@@ -176,16 +176,22 @@ const parseYahooMatchup = (yahooMatchup) => {
     let metadata = {};
     let teamsWrapper = {};
 
-    // Robustly find metadata (status) and teams
-    // yahooMatchup is likely an object or array wrapper
+    // 1. Direct object property extraction if available
+    if (yahooMatchup && typeof yahooMatchup === 'object' && !Array.isArray(yahooMatchup)) {
+        if (yahooMatchup.status) metadata.status = yahooMatchup.status;
+        if (yahooMatchup.week) metadata.week = yahooMatchup.week;
+        if (yahooMatchup.matchup_url) metadata.matchup_url = yahooMatchup.matchup_url;
+        if (yahooMatchup.winner_team_key) metadata.winner_team_key = yahooMatchup.winner_team_key;
+        if (yahooMatchup.teams) teamsWrapper = yahooMatchup.teams;
+    }
 
-    // Normalize to array of values to search
+    // 2. Fallback to array values (XML-to-JSON format wrapper support)
     const parts = Array.isArray(yahooMatchup) ? yahooMatchup : Object.values(yahooMatchup);
 
-    const metaPart = parts.find(p => p && p.status); // Find part with 'status'
-    const teamsPart = parts.find(p => p && p.teams); // Find part with 'teams'
+    const metaPart = parts.find(p => p && typeof p === 'object' && p.status); // Find part with 'status'
+    const teamsPart = parts.find(p => p && typeof p === 'object' && p.teams); // Find part with 'teams'
 
-    if (metaPart) metadata = metaPart;
+    if (metaPart) metadata = { ...metadata, ...metaPart };
     if (teamsPart) teamsWrapper = teamsPart.teams;
 
     const teams = [];
@@ -205,12 +211,27 @@ const parseYahooMatchup = (yahooMatchup) => {
     const safeWeek = metadata.week ? Number(metadata.week) : 0;
     const safeWeekLabel = metadata.week || '?';
 
+    // Extract league_id and team_ids from keys to build correct Yahoo Matchup webpage URL
+    let matchupUrl = metadata.matchup_url || null;
+    if (team1.team_key && team2.team_key) {
+        const leagueIdMatch = team1.team_key.match(/\.l\.(\d+)/);
+        const leagueId = leagueIdMatch ? leagueIdMatch[1] : null;
+        const awayTeamIdMatch = team1.team_key.match(/\.t\.(\d+)/);
+        const awayTeamId = awayTeamIdMatch ? awayTeamIdMatch[1] : null;
+        const homeTeamIdMatch = team2.team_key.match(/\.t\.(\d+)/);
+        const homeTeamId = homeTeamIdMatch ? homeTeamIdMatch[1] : null;
+        
+        if (leagueId && awayTeamId && homeTeamId) {
+            matchupUrl = `https://football.fantasysports.yahoo.com/f1/${leagueId}/matchup?week=${safeWeek}&mid1=${awayTeamId}&mid2=${homeTeamId}`;
+        }
+    }
+
     return {
         UniqueID: `yahoo_${safeWeek}_${team1.team_key}_${team2.team_key}`,
         Week: safeWeek,
         isFinished: metadata.status === 'postevent',
         status: metadata.status,
-        MatchURL: metadata.matchup_url,
+        MatchURL: matchupUrl,
 
         GameDate: 'Week ' + safeWeekLabel,
         GameTimeET: metadata.status === 'postevent' ? 'Final' : 'Scheduled',

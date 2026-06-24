@@ -61,7 +61,7 @@ app.post('/token', async (req, res) => {
     const axios = require('axios');
 
     const tokenPayload = qs.stringify({
-      client_id: 'dj0yJmk9YzB5OE1UcEwxMXBjJmQ9WVdrOU9YbExTRk5YZDFVbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTky',
+      client_id: 'dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw',
       client_secret: clientSecret,
       redirect_uri: 'weeklyleaguepickemapp://auth',
       code: code,

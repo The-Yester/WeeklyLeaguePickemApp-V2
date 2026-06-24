@@ -16,9 +16,10 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link, useFocusEffect } from 'expo-router';
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../../src/context/AuthContext';
-import { db } from '../../src/config/firebase';
+import { auth, db } from '../../src/config/firebase';
+import { deleteUser } from 'firebase/auth';
 
 const ArrowRightIcon = () => <Text style={{ color: '#0D1B2A', fontSize: 16, fontWeight: 'bold' }}>GAME ON! ➤</Text>;
 
@@ -39,24 +40,24 @@ const MAX_WEEKS = 18;
 // --- Weekly Picks Lock Schedule ---
 // This schedule will now be used to determine the current week automatically.
 const PICKS_LOCK_SCHEDULE = [
-  { week: 1, date: '2025-09-04', lockTime: '19:15' },
-  { week: 2, date: '2025-09-11', lockTime: '19:15' },
-  { week: 3, date: '2025-09-18', lockTime: '19:15' },
-  { week: 4, date: '2025-09-25', lockTime: '19:15' },
-  { week: 5, date: '2025-10-02', lockTime: '19:15' },
-  { week: 6, date: '2025-10-09', lockTime: '19:15' },
-  { week: 7, date: '2025-10-16', lockTime: '19:15' },
-  { week: 8, date: '2025-10-23', lockTime: '19:15' },
-  { week: 9, date: '2025-10-30', lockTime: '19:15' },
-  { week: 10, date: '2025-11-06', lockTime: '19:15' },
-  { week: 11, date: '2025-11-13', lockTime: '19:15' },
-  { week: 12, date: '2025-11-20', lockTime: '19:15' },
-  { week: 13, date: '2025-11-27', lockTime: '19:15' },
-  { week: 14, date: '2025-12-04', lockTime: '19:15' },
-  { week: 15, date: '2025-12-11', lockTime: '19:15' },
-  { week: 16, date: '2025-12-18', lockTime: '19:15' },
-  { week: 17, date: '2025-12-25', lockTime: '12:00' },
-  { week: 18, date: '2026-01-01', lockTime: '12:00' },
+  { week: 1, date: '2026-09-09', lockTime: '19:15' },
+  { week: 2, date: '2026-09-17', lockTime: '19:15' },
+  { week: 3, date: '2026-09-24', lockTime: '19:15' },
+  { week: 4, date: '2026-10-01', lockTime: '19:15' },
+  { week: 5, date: '2026-10-08', lockTime: '19:15' },
+  { week: 6, date: '2026-10-15', lockTime: '19:15' },
+  { week: 7, date: '2026-10-22', lockTime: '19:15' },
+  { week: 8, date: '2026-10-29', lockTime: '19:15' },
+  { week: 9, date: '2026-11-05', lockTime: '19:15' },
+  { week: 10, date: '2026-11-12', lockTime: '19:15' },
+  { week: 11, date: '2026-11-19', lockTime: '19:15' },
+  { week: 12, date: '2026-11-26', lockTime: '19:15' },
+  { week: 13, date: '2026-12-03', lockTime: '19:15' },
+  { week: 14, date: '2026-12-10', lockTime: '19:15' },
+  { week: 15, date: '2026-12-17', lockTime: '19:15' },
+  { week: 16, date: '2026-12-24', lockTime: '12:00' },
+  { week: 17, date: '2026-12-31', lockTime: '12:00' },
+  { week: 18, date: '2027-01-07', lockTime: '12:00' },
 ];
 
 // parseSheetData removed as we now use Yahoo Service
@@ -80,9 +81,10 @@ const getInitialWeek = () => {
 
 const HomeScreen = () => {
   const router = useRouter();
-  const { user: loggedInUser, leagueKey } = useAuth();
+  const { user: loggedInUser, leagueKey, signOut } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
@@ -339,20 +341,85 @@ const HomeScreen = () => {
     }
   }, [loggedInUser, fetchMatchupsFromYahoo, fetchPreviousWeekMatchups, fetchStandingsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
 
+  useEffect(() => {
+    const checkPendingDelete = async () => {
+      if (loggedInUser === undefined) return;
+      if (!loggedInUser) return;
+
+      try {
+        const pendingDeleteUid = await AsyncStorage.getItem('pendingDeleteUid');
+        if (pendingDeleteUid && loggedInUser.uid === pendingDeleteUid) {
+          setIsDeleting(true);
+          const firebaseUser = auth.currentUser;
+          if (firebaseUser) {
+            console.log("Starting deletion of data and account for user:", firebaseUser.uid);
+            
+            // 1. Delete Firestore Data
+            const picksRef = collection(db, "users", firebaseUser.uid, "picks");
+            const commentsRef = collection(db, "users", firebaseUser.uid, "comments");
+            const oauthRef = collection(db, "users", firebaseUser.uid, "oauth");
+
+            const picksSnap = await getDocs(picksRef);
+            for (const d of picksSnap.docs) await deleteDoc(d.ref);
+
+            const commentsSnap = await getDocs(commentsRef);
+            for (const d of commentsSnap.docs) await deleteDoc(d.ref);
+
+            const oauthSnap = await getDocs(oauthRef);
+            for (const d of oauthSnap.docs) await deleteDoc(d.ref);
+
+            await deleteDoc(doc(db, "users", firebaseUser.uid));
+
+            // 2. Delete Auth User
+            await deleteUser(firebaseUser);
+            
+            // Clear pending flag
+            await AsyncStorage.removeItem('pendingDeleteUid');
+            setIsDeleting(false);
+            
+            Alert.alert("Account Deleted", "Your account and all associated data have been permanently deleted.");
+            await signOut();
+          } else {
+            await AsyncStorage.removeItem('pendingDeleteUid');
+            setIsDeleting(false);
+          }
+        }
+      } catch (error) {
+        console.error("Pending delete failed:", error);
+        await AsyncStorage.removeItem('pendingDeleteUid');
+        setIsDeleting(false);
+        Alert.alert("Error", "Could not complete account deletion. Please try again or contact support.");
+      }
+    };
+
+    checkPendingDelete();
+  }, [loggedInUser, signOut]);
+
   useFocusEffect(
     useCallback(() => {
-      const fetchData = async () => {
+      const run = async () => {
+        try {
+          const pendingDeleteUid = await AsyncStorage.getItem('pendingDeleteUid');
+          if (pendingDeleteUid && loggedInUser && loggedInUser.uid === pendingDeleteUid) {
+            console.log('HomeScreen useFocusEffect: pending delete detected, skipping load.');
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to check pendingDeleteUid in useFocusEffect:", e);
+        }
+
+        if (!leagueKey && loggedInUser) {
+          console.log('HomeScreen: Missing League Key, redirecting to setup...');
+          router.replace('/appGroup/leagueSetup');
+          return;
+        }
+
         await loadAllScreenData();
       };
 
-
-      if (!leagueKey && loggedInUser) {
-        console.log('HomeScreen: Missing League Key, redirecting to setup...');
-        router.replace('/appGroup/leagueSetup');
-        return;
+      if (loggedInUser !== undefined) {
+        run();
       }
-
-      fetchData();
 
       return () => {
         // Optional cleanup function
@@ -465,6 +532,16 @@ const HomeScreen = () => {
   const podiumUsers = leaderboardDisplayData.slice(0, 3);
   const listUsers = leaderboardDisplayData.slice(3);
 
+  if (isDeleting) {
+    return (
+      <View style={[homeScreenStyles.container, homeScreenStyles.centered]}>
+        <ActivityIndicator size="large" color={SECONDARY_COLOR} />
+        <Text style={{ color: TEXT_COLOR_MAIN, marginTop: 10, fontSize: 16, fontWeight: 'bold' }}>Deleting Account...</Text>
+        <Text style={{ color: TEXT_COLOR_SUB, marginTop: 5 }}>Cleaning up your data and profile...</Text>
+      </View>
+    );
+  }
+
   if (isLoading && !refreshing) {
     return (
       <View style={[homeScreenStyles.container, homeScreenStyles.centered]}>
@@ -476,7 +553,7 @@ const HomeScreen = () => {
 
   return (
     <View style={homeScreenStyles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
+      <StatusBar barStyle="light-content" backgroundColor="#10B981" />
       <ScrollView
         style={homeScreenStyles.scrollView}
         contentContainerStyle={homeScreenStyles.scrollViewContent}
@@ -499,7 +576,7 @@ const HomeScreen = () => {
             <Text style={homeScreenStyles.usernameText}>
               {loggedInUser?.teamName || loggedInUser?.name || loggedInUser?.username || "Player"}
             </Text>
-            <Text style={homeScreenStyles.weekSubText}>Week {currentWeek} • Season 2025</Text>
+            <Text style={homeScreenStyles.weekSubText}>Week {currentWeek} • Season 2026</Text>
           </View>
         </View>
 
@@ -576,15 +653,49 @@ const HomeScreen = () => {
               </View>
               <View style={homeScreenStyles.matchupRow}>
                 <View style={homeScreenStyles.teamColumn}>
-                  <Text style={homeScreenStyles.teamRecord}>{matchupOfTheWeek.awayRecord}</Text>
-                  <Text style={homeScreenStyles.teamAbbrBig}>{matchupOfTheWeek.AwayTeamAB}</Text>
+                  <View style={homeScreenStyles.teamLogoContainer}>
+                    {matchupOfTheWeek.AwayTeamLogo ? (
+                      <Image
+                        source={{ uri: matchupOfTheWeek.AwayTeamLogo }}
+                        style={homeScreenStyles.teamLogo}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View style={homeScreenStyles.teamLogoPlaceholder}>
+                        <Text style={homeScreenStyles.teamLogoPlaceholderText}>
+                          {matchupOfTheWeek.AwayTeamAB ? matchupOfTheWeek.AwayTeamAB.substring(0, 1) : '?'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={homeScreenStyles.teamNameBig} numberOfLines={2} ellipsizeMode="tail">
+                    {matchupOfTheWeek.AwayTeamName || 'Away Team'}
+                  </Text>
+                  <Text style={homeScreenStyles.teamRecord}>{matchupOfTheWeek.awayRecord || '0-0-0'}</Text>
                 </View>
                 <View style={homeScreenStyles.vsColumn}>
                   <Text style={homeScreenStyles.vsText}>VS</Text>
                 </View>
                 <View style={homeScreenStyles.teamColumn}>
-                  <Text style={homeScreenStyles.teamRecord}>{matchupOfTheWeek.homeRecord}</Text>
-                  <Text style={homeScreenStyles.teamAbbrBig}>{matchupOfTheWeek.HomeTeamAB}</Text>
+                  <View style={homeScreenStyles.teamLogoContainer}>
+                    {matchupOfTheWeek.HomeTeamLogo ? (
+                      <Image
+                        source={{ uri: matchupOfTheWeek.HomeTeamLogo }}
+                        style={homeScreenStyles.teamLogo}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View style={homeScreenStyles.teamLogoPlaceholder}>
+                        <Text style={homeScreenStyles.teamLogoPlaceholderText}>
+                          {matchupOfTheWeek.HomeTeamAB ? matchupOfTheWeek.HomeTeamAB.substring(0, 1) : '?'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={homeScreenStyles.teamNameBig} numberOfLines={2} ellipsizeMode="tail">
+                    {matchupOfTheWeek.HomeTeamName || 'Home Team'}
+                  </Text>
+                  <Text style={homeScreenStyles.teamRecord}>{matchupOfTheWeek.homeRecord || '0-0-0'}</Text>
                 </View>
               </View>
             </View>
@@ -646,7 +757,12 @@ const HomeScreen = () => {
               {/* LIST */}
               <View style={homeScreenStyles.listContainer}>
                 {listUsers.map((user) => (
-                  <View key={user.id} style={homeScreenStyles.listItem}>
+                  <TouchableOpacity
+                    key={user.id}
+                    style={homeScreenStyles.listItem}
+                    onPress={() => router.push({ pathname: '/appGroup/profile', params: { userId: user.id } })}
+                    activeOpacity={0.7}
+                  >
                     <Text style={homeScreenStyles.listRank}>{user.rank}</Text>
                     <Image
                       source={user.avatarUri ? { uri: user.avatarUri } : null}
@@ -660,7 +776,7 @@ const HomeScreen = () => {
                       <Text style={homeScreenStyles.listRecord}>Record: {user.record}</Text>
                     </View>
                     <Text style={homeScreenStyles.listScore}>{user.score} pts</Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             </>
@@ -675,9 +791,14 @@ const HomeScreen = () => {
 
 // --- SUB-COMPONENTS ---
 const PodiumItem = ({ user, place, color }) => {
+  const router = useRouter();
   const isFirst = place === 1;
   return (
-    <View style={[homeScreenStyles.podiumItem, isFirst && { marginTop: 0, paddingBottom: 20 }]}>
+    <TouchableOpacity
+      style={[homeScreenStyles.podiumItem, isFirst && { marginTop: 0, paddingBottom: 20 }]}
+      onPress={() => router.push({ pathname: '/appGroup/profile', params: { userId: user.id } })}
+      activeOpacity={0.7}
+    >
       <View style={[homeScreenStyles.podiumAvatarValues, { borderColor: color }]}>
         {user.avatarUri ?
           <Image source={{ uri: user.avatarUri }} style={{ width: '100%', height: '100%', borderRadius: 100 }} />
@@ -690,7 +811,7 @@ const PodiumItem = ({ user, place, color }) => {
       <Text style={homeScreenStyles.podiumName} numberOfLines={1}>{user.name}</Text>
       <Text style={homeScreenStyles.podiumScore}>{user.score} pts</Text>
       <Text style={homeScreenStyles.podiumRecord}>{user.record}</Text>
-    </View>
+    </TouchableOpacity>
   )
 }
 
@@ -854,6 +975,36 @@ const homeScreenStyles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: 1,
+  },
+  teamNameBig: {
+    color: TEXT_COLOR_MAIN,
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  teamLogoContainer: {
+    marginBottom: 6,
+  },
+  teamLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
+  },
+  teamLogoPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  teamLogoPlaceholderText: {
+    color: TEXT_COLOR_MAIN,
+    fontWeight: 'bold',
+    fontSize: 18,
   },
   teamRecord: {
     color: TEXT_COLOR_SUB,
