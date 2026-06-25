@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Linking, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { useYahooAuth } from '../../src/hooks/useYahooAuth'; // Added import
@@ -109,48 +109,52 @@ export default function LeagueSetupScreen() {
     }
 
     return (
-        <View style={styles.container}>
-            <View style={styles.content}>
-                <Ionicons name="american-football" size={60} color={PRIMARY_COLOR} style={{ marginBottom: 20 }} />
-                <Text style={styles.title}>Connect Your League</Text>
-                <Text style={styles.subtitle}>
-                    Enter the Yahoo League ID (Group ID) for the current season. You can find this in your league URL or renewal email.
-                </Text>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={styles.container}>
+                <View style={styles.content}>
+                    <Ionicons name="american-football" size={60} color={PRIMARY_COLOR} style={{ marginBottom: 20 }} />
+                    <Text style={styles.title}>Connect Your League</Text>
+                    <Text style={styles.subtitle}>
+                        Enter the Yahoo League ID (Group ID) for the current season. You can find this in your league URL or renewal email.
+                    </Text>
 
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>League ID (e.g. 66645)</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter League ID"
-                        placeholderTextColor="#999"
-                        keyboardType="numeric"
-                        value={leagueIdInput}
-                        onChangeText={setLeagueIdInput}
-                        maxLength={10}
-                    />
+                    <View style={styles.inputContainer}>
+                        <Text style={styles.label}>League ID (e.g. 66645)</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter League ID"
+                            placeholderTextColor="#999"
+                            keyboardType="numeric"
+                            returnKeyType="done"
+                            onSubmitEditing={Keyboard.dismiss}
+                            value={leagueIdInput}
+                            onChangeText={setLeagueIdInput}
+                            maxLength={10}
+                        />
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.button, loading && styles.buttonDisabled]}
+                        onPress={handleConnect}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color="#FFF" />
+                        ) : (
+                            <Text style={styles.buttonText}>Connect League</Text>
+                        )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => Linking.openURL('https://football.fantasysports.yahoo.com/')} style={{ marginTop: 20 }}>
+                        <Text style={styles.linkText}>Go to Yahoo Fantasy Website</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={signOut} style={{ marginTop: 20 }}>
+                        <Text style={[styles.linkText, { color: 'red' }]}>Sign Out / Reset</Text>
+                    </TouchableOpacity>
                 </View>
-
-                <TouchableOpacity
-                    style={[styles.button, loading && styles.buttonDisabled]}
-                    onPress={handleConnect}
-                    disabled={loading}
-                >
-                    {loading ? (
-                        <ActivityIndicator color="#FFF" />
-                    ) : (
-                        <Text style={styles.buttonText}>Connect League</Text>
-                    )}
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => Linking.openURL('https://football.fantasysports.yahoo.com/')} style={{ marginTop: 20 }}>
-                    <Text style={styles.linkText}>Go to Yahoo Fantasy Website</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={signOut} style={{ marginTop: 20 }}>
-                    <Text style={[styles.linkText, { color: 'red' }]}>Sign Out / Reset</Text>
-                </TouchableOpacity>
             </View>
-        </View>
+        </TouchableWithoutFeedback>
     );
 }
 

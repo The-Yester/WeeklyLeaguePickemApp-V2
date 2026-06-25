@@ -14,6 +14,7 @@ import {
   Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 // --- THEME COLORS ---
@@ -29,6 +30,7 @@ const { width } = Dimensions.get('window');
 
 export default function FrankingsScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
 
   // Security State
   // isUnlocked = false: Show Modal
@@ -64,7 +66,7 @@ export default function FrankingsScreen() {
       <Modal
         animationType="slide"
         transparent={true}
-        visible={!isUnlocked}
+        visible={isFocused && !isUnlocked}
         onRequestClose={() => {
           router.back();
         }}
@@ -75,7 +77,7 @@ export default function FrankingsScreen() {
 
             <Text style={styles.modalTitle}>COMMISSIONER ACCESS</Text>
             <Text style={styles.modalText}>
-              This section belongs to the specific league known as <Text style={{ fontWeight: 'bold', color: SECONDARY_COLOR }}>"THE LEAGUE"</Text>.
+              This section belongs to the specific fantasy footballleague known as <Text style={{ fontWeight: 'bold', color: SECONDARY_COLOR }}>"THE LEAGUE"</Text>.
             </Text>
 
             <Text style={styles.modalText}>
@@ -93,7 +95,7 @@ export default function FrankingsScreen() {
             />
 
             <TouchableOpacity style={styles.unlockButton} onPress={handleUnlock}>
-              <Text style={styles.unlockButtonText}>UNLOCK VAULT</Text>
+              <Text style={styles.unlockButtonText}>UNLOCK FRANKINGS</Text>
             </TouchableOpacity>
 
             <View style={styles.separator} />

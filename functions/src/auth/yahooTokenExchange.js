@@ -87,14 +87,45 @@ exports.exchangeYahooCodeForToken = async (request) => {
     const payload = JSON.parse(jsonPayload);
 
     const yahooUserId = payload.sub;
-    console.log('👤 Yahoo User ID (sub):', yahooUserId);
+    const email = payload.email;
+    console.log('👤 Yahoo User ID (sub):', yahooUserId, 'Email:', email);
 
-    // Create Firebase Custom Token
-    const firebaseCustomToken = await admin.auth().createCustomToken(yahooUserId, {
-      yahooAccessToken: tokenData.access_token, // Optional: embed in token if needed on client
+    let uid = yahooUserId;
+    if (email) {
+      try {
+        // Look up if a user already exists with this email address
+        const userRecord = await admin.auth().getUserByEmail(email);
+        uid = userRecord.uid;
+        console.log('🔗 Found existing Firebase user with email:', email, 'Using existing UID:', uid);
+      } catch (error) {
+        if (error.code === 'auth/user-not-found') {
+          console.log('👤 No existing user found for email:', email, '. Pre-creating user with Yahoo GUID...');
+          try {
+            // Create the user so the email is registered in Firebase Auth
+            await admin.auth().createUser({
+              uid: yahooUserId,
+              email: email,
+              displayName: payload.name || payload.nickname || null,
+              photoURL: payload.picture || null,
+              emailVerified: payload.email_verified || false,
+            });
+            console.log('✅ Pre-created Firebase user successfully.');
+          } catch (createError) {
+            console.warn('⚠️ Could not pre-create user (might already exist by UID):', createError.message);
+          }
+        } else {
+          console.error('❌ Error calling getUserByEmail:', error);
+          throw new HttpsError('internal', 'Error checking existing user');
+        }
+      }
+    }
+
+    // Create Firebase Custom Token using the mapped UID
+    const firebaseCustomToken = await admin.auth().createCustomToken(uid, {
+      yahooAccessToken: tokenData.access_token,
     });
 
-    console.log('✅ Firebase Custom Token created');
+    console.log('✅ Firebase Custom Token created for UID:', uid);
 
     // Return everything client might need
     return {

@@ -77,6 +77,7 @@ export default function AppTabsLayout() {
         headerTitleStyle: {
           fontWeight: 'bold',
         },
+        headerTitleAlign: 'left',
         headerRight: () => <HeaderRightButtons />,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
@@ -166,7 +167,8 @@ export default function AppTabsLayout() {
         options={{
           href: null,
           title: 'Setup League',
-          tabBarStyle: { display: 'none' }
+          tabBarStyle: { display: 'none' },
+          headerRight: () => null
         }}
       />
     </Tabs>

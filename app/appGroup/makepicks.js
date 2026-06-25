@@ -15,6 +15,7 @@ import {
   Dimensions
 } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { collection, doc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../src/context/AuthContext';
@@ -136,6 +137,7 @@ const MakePicksScreen = ({ route }) => {
   const navigation = useNavigation();
   const { user: loggedInUser, leagueKey } = useAuth();
   const { setHasUnsavedChanges } = useUnsavedChanges();
+  const insets = useSafeAreaInsets();
 
   const initialWeek = params.week ? parseInt(params.week, 10) : 1;
 
@@ -390,7 +392,7 @@ const MakePicksScreen = ({ route }) => {
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
 
       {/* WEEK NAV HEADER */}
-      <View style={styles.weekNavigationWrapper}>
+      <View style={[styles.weekNavigationWrapper, { paddingTop: Math.max(insets.top, 15) }]}>
         <View style={styles.weekNavigation}>
           <TouchableOpacity
             style={[styles.weekNavButton, currentWeek === 1 && styles.weekNavButtonDisabled]}

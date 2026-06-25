@@ -16,6 +16,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useRouter, Link } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import * as Notifications from 'expo-notifications';
 import { deleteUser } from "firebase/auth";
@@ -73,6 +74,7 @@ Notifications.setNotificationHandler({
 const SettingsScreen = () => {
   const router = useRouter();
   const { user, signOut } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [arePickRemindersEnabled, setArePickRemindersEnabled] = useState(false);
 
@@ -279,7 +281,7 @@ const SettingsScreen = () => {
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
 
       {/* [FIX] Custom Header with Back Button (Single Header) */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 15) }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={TEXT_COLOR_LIGHT} />
         </TouchableOpacity>
@@ -361,7 +363,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: PRIMARY_COLOR,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 5 : 40,
     paddingBottom: 15,
     paddingHorizontal: 15,
   },

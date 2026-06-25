@@ -16,6 +16,7 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { db } from '../../src/config/firebase'; // Adjust path if needed
 
@@ -34,6 +35,7 @@ const MAX_WEEKS = 18;
 
 const MyPicksScreen = () => {
   const { user, leagueKey } = useAuth();
+  const insets = useSafeAreaInsets();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -237,7 +239,7 @@ const MyPicksScreen = () => {
       <StatusBar barStyle="light-content" backgroundColor={PRIMARY_COLOR} />
 
       {/* Header / Week Nav */}
-      <View style={styles.weekNavigation}>
+      <View style={[styles.weekNavigation, { paddingTop: Math.max(insets.top, 15) }]}>
         <TouchableOpacity
           style={[styles.weekNavButton, (currentWeek === 1 || isLoading) && styles.weekNavButtonDisabled]}
           onPress={() => handleWeekChange(Math.max(1, currentWeek - 1))}
