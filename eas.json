@@ -8,9 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
-        "YAHOO_CLIENT_ID": "dj0yJmk9YzB5OE1UcEwxMXBjJmQ9WVdrOU9YbExTRk5YZDFVbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTky",
-        "YAHOO_CLIENT_SECRET": "4957cd3f9454303aa20cdab15ee7c833d4820294",
+        "YAHOO_CLIENT_ID": "dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw",
+        "YAHOO_CLIENT_SECRET": "c34077908c4d52310342b18fe5d6b4f676cafc37",
         "NPM_FLAGS": "--legacy-peer-deps",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "weekly-pickem-8cea3.firebaseapp.com",
@@ -36,9 +35,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
-        "YAHOO_CLIENT_ID": "dj0yJmk9YzB5OE1UcEwxMXBjJmQ9WVdrOU9YbExTRk5YZDFVbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTky",
-        "YAHOO_CLIENT_SECRET": "4957cd3f9454303aa20cdab15ee7c833d4820294",
+        "YAHOO_CLIENT_ID": "dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw",
+        "YAHOO_CLIENT_SECRET": "c34077908c4d52310342b18fe5d6b4f676cafc37",
         "NPM_FLAGS": "--legacy-peer-deps",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "weekly-pickem-8cea3.firebaseapp.com",
@@ -55,9 +53,8 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_GOOGLE_SHEETS_API_KEY": "AIzaSyCoXdS3-RNrZ1C4lC28CbNL5owCGTpJNdU",
-        "YAHOO_CLIENT_ID": "dj0yJmk9YzB5OE1UcEwxMXBjJmQ9WVdrOU9YbExTRk5YZDFVbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTky",
-        "YAHOO_CLIENT_SECRET": "4957cd3f9454303aa20cdab15ee7c833d4820294",
+        "YAHOO_CLIENT_ID": "dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw",
+        "YAHOO_CLIENT_SECRET": "c34077908c4d52310342b18fe5d6b4f676cafc37",
         "NPM_FLAGS": "--legacy-peer-deps",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "weekly-pickem-8cea3.firebaseapp.com",

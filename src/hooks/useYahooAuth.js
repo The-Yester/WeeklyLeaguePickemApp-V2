@@ -26,7 +26,7 @@ export function useYahooAuth() {
 
     const [request, response, promptAsyncOriginal] = useAuthRequest(
         {
-            clientId: 'dj0yJmk9ZUJDMkJNYXJrOUt3JmQ9WVdrOU0yWmlOMGR3ZGtjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PWI5',
+            clientId: 'dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw',
             redirectUri,
             scopes: ['openid', 'profile', 'email', 'fspt-r'],
             responseType: 'code',

@@ -89,6 +89,39 @@ async function ensureAccessToken(uid) {
   if (!res.ok) {
     const text = await res.text();
     console.error(`❌ Yahoo token refresh failed: ${res.status}`, text);
+
+    // If Yahoo complains that a client secret is not required (e.g. for "Installed Application" client type),
+    // retry the request without the Basic Auth header.
+    if (isConfidential && text.includes('client secret not required')) {
+      console.log('🔄 Retrying Yahoo token refresh without client secret (as requested by Yahoo)...');
+      const retryHeaders = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      };
+      const retryRes = await fetch(YAHOO_TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: retryHeaders,
+        body,
+      });
+
+      if (retryRes.ok) {
+        const json = await retryRes.json();
+        const { access_token, token_type, expires_in, refresh_token: newRefresh } = json;
+        const updated = {
+          access_token,
+          token_type: token_type || 'Bearer',
+          expires_at: Date.now() + Math.max(0, (expires_in ?? 3600) - 60) * 1000,
+        };
+        if (newRefresh) updated.refresh_token = newRefresh;
+        await ref.set(updated, { merge: true });
+        console.log('✅ Yahoo token refreshed and stored successfully (on retry).');
+        return access_token;
+      } else {
+        const retryText = await retryRes.text();
+        console.error(`❌ Yahoo token refresh retry failed: ${retryRes.status}`, retryText);
+        throw new functions.https.HttpsError('unauthenticated', `Refresh failed: ${retryRes.status} ${retryText}`);
+      }
+    }
+
     throw new functions.https.HttpsError('unauthenticated', `Refresh failed: ${res.status} ${text}`);
   }
 
