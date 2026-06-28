@@ -103,6 +103,7 @@ export default function YahooCallback() {
             code: authCode,
             code_verifier: codeVerifier,
             redirect_uri: redirectUri,
+            currentUid: auth.currentUser?.uid || null
         });
 
         console.log('🔑 Token exchange response:', data);

@@ -1,115 +1,30 @@
-import * as SecureStore from 'expo-secure-store';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '../config/firebase';
 
-const YAHOO_BASE_URL = 'https://fantasysports.yahooapis.com/fantasy/v2';
-// LEAGUE_KEY removed - now passed dynamically
-
-
-// Helper to get headers with token
-const getHeaders = async () => {
-    let token = await SecureStore.getItemAsync('yahoo_access_token');
-
-    // Fallback to AsyncStorage for legacy sessions
-    if (!token) {
-        token = await AsyncStorage.getItem('yahoo_access_token');
-        if (token) {
-            // Optional: Migrating it to SecureStore here helps subsequent calls
-            await SecureStore.setItemAsync('yahoo_access_token', token);
-        }
-    }
-
-    if (!token) {
-        throw new Error('No Yahoo Access Token found. Please login.');
-    }
-    return {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-    };
-};
-
-// [NEW] Added Client ID for Refresh Flow
-const YAHOO_CLIENT_ID = 'dj0yJmk9ZUJDMkJNYXJrOUt3JmQ9WVdrOU0yWmlOMGR3ZGtjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PWI5';
-const YAHOO_TOKEN_URL = 'https://api.login.yahoo.com/oauth2/get_token';
-
-// Helper to refresh token
-const refreshYahooAccessToken = async () => {
+const callYahooProxy = async (path, method = 'GET', body = null) => {
     try {
-        console.log('🔄 Attempting to refresh Yahoo Access Token...');
-        const refreshToken = await SecureStore.getItemAsync('yahoo_refresh_token');
-        if (!refreshToken) {
-            console.error('❌ No refresh token available in SecureStore.');
-            throw new Error('No refresh token available. Please login again.');
-        }
-
-        const params = new URLSearchParams();
-        params.append('client_id', YAHOO_CLIENT_ID);
-        params.append('grant_type', 'refresh_token');
-        params.append('refresh_token', refreshToken);
-
-        const response = await fetch(YAHOO_TOKEN_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params.toString()
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            console.error('❌ Refresh Token Failed:', text);
-            throw new Error(`Refresh Token Failed: ${text}`);
-        }
-
-        const data = await response.json();
-        console.log('✅ Yahoo Token Refreshed Successfully!');
-
-        // Save new tokens
-        if (data.access_token) {
-            await SecureStore.setItemAsync('yahoo_access_token', data.access_token);
-        }
-        if (data.refresh_token) {
-            await SecureStore.setItemAsync('yahoo_refresh_token', data.refresh_token);
-        }
-
-        return data.access_token;
-
+        const functions = getFunctions(app);
+        const yahooFantasyProxy = httpsCallable(functions, 'yahooFantasyProxy');
+        const response = await yahooFantasyProxy({ path, method, body });
+        return response.data;
     } catch (e) {
-        console.error('❌ Error refreshing token:', e);
+        console.error(`❌ yahooFantasyProxy call failed for path ${path}:`, e);
         throw e;
     }
 };
 
 /**
- * Fetch Scoreboard directly from Yahoo API
+ * Fetch Scoreboard directly from Yahoo API via Cloud Function Proxy
  * This returns the matchups for a specific week or current week.
  */
 export const getWeeklyMatchups = async (week = 'current', leagueKey) => {
     if (!leagueKey) throw new Error('getWeeklyMatchups requires a valid leagueKey');
 
-    // Internal helper to perform the fetch with optional retry
-    const performFetch = async (isRetry = false) => {
-        const headers = await getHeaders();
-        const weekParam = week === 'current' ? '' : `;week=${week}`;
-        const url = `${YAHOO_BASE_URL}/league/${leagueKey}/scoreboard${weekParam}?format=json`;
-
-        console.log(`🏈 Fetching Matchups (Week ${week}) - ${isRetry ? 'Retry' : 'Attempt 1'}`);
-
-        const response = await fetch(url, { headers });
-
-        if (!response.ok) {
-            if (response.status === 401 && !isRetry) {
-                console.warn('⚠️ Yahoo 401: Token expired. Refreshing...');
-                await refreshYahooAccessToken();
-                return performFetch(true); // Retry once
-            }
-            const text = await response.text();
-            throw new Error(`Yahoo API Wrapper Error: ${response.status} ${text}`);
-        }
-        return response.json();
-    };
-
     try {
-        const data = await performFetch();
+        const weekParam = week === 'current' ? '' : `;week=${week}`;
+        const path = `/league/${leagueKey}/scoreboard${weekParam}`;
+        console.log(`🏈 Fetching Matchups (Week ${week}) via Proxy`);
+        const data = await callYahooProxy(path);
 
         // Parse the deep nested JSON from Yahoo
         const leagueData = data?.fantasy_content?.league;
@@ -329,29 +244,11 @@ const parseYahooTeam = (teamWrapper) => {
  * Returns the full league_key (e.g., '449.l.66645') and metadata if found.
  */
 export const validateAndLinkLeague = async (userInputId) => {
-    const performFetch = async (isRetry = false) => {
-        const headers = await getHeaders();
-        // Fetch User's Teams directly (users -> games -> leagues -> teams)
-        // This gives us the League Metadata AND the User's Team in that league
-        const url = `${YAHOO_BASE_URL}/users;use_login=1/games;game_codes=nfl/leagues/teams?format=json`;
-        console.log(`🔍 Validating League & Team ID: ${userInputId} (Attempt ${isRetry ? 2 : 1})`);
-
-        const response = await fetch(url, { headers });
-
-        if (!response.ok) {
-            if (response.status === 401 && !isRetry) {
-                console.warn('⚠️ Yahoo 401 in Validation: Token expired. Refreshing...');
-                await refreshYahooAccessToken();
-                return performFetch(true);
-            }
-            const text = await response.text();
-            throw new Error(`Yahoo API Wrapper Error: ${text}`);
-        }
-        return response.json();
-    };
-
     try {
-        const data = await performFetch();
+        const path = '/users;use_login=1/games;game_codes=nfl/leagues/teams';
+        console.log(`🔍 Validating League & Team ID via Proxy: ${userInputId}`);
+        const data = await callYahooProxy(path);
+        
         console.log("🔍 RAW YAHOO RESPONSE (Validation):", JSON.stringify(data, null, 2).substring(0, 200) + "...");
 
         const userObj = data?.fantasy_content?.users?.['0'];
@@ -485,27 +382,11 @@ const parseYahooStandings = (standingsWrapper) => {
 export const getLeagueStandings = async (leagueKey) => {
     if (!leagueKey) throw new Error('getLeagueStandings requires a valid leagueKey');
 
-    const performFetch = async (isRetry = false) => {
-        const headers = await getHeaders();
-        const url = `${YAHOO_BASE_URL}/league/${leagueKey}/standings?format=json`;
-        console.log(`🏆 Fetching Standings (League: ${leagueKey}) - ${isRetry ? 'Retry' : 'Attempt 1'}`);
-
-        const response = await fetch(url, { headers });
-
-        if (!response.ok) {
-            if (response.status === 401 && !isRetry) {
-                console.warn('⚠️ Yahoo 401 in Standings: Token expired. Refreshing...');
-                await refreshYahooAccessToken();
-                return performFetch(true);
-            }
-            const text = await response.text();
-            throw new Error(`Yahoo API Wrapper Error: ${response.status} ${text}`);
-        }
-        return response.json();
-    };
-
     try {
-        const data = await performFetch();
+        const path = `/league/${leagueKey}/standings`;
+        console.log(`🏆 Fetching Standings via Proxy (League: ${leagueKey})`);
+        const data = await callYahooProxy(path);
+
         // Parse: fantasy_content -> league -> [1] -> standings -> [0] -> teams
         const leagueData = data?.fantasy_content?.league;
         const standingsWrapper = leagueData?.[1]?.standings?.[0]?.teams;
@@ -545,29 +426,11 @@ export const getUserStanding = async (leagueKey, teamKey) => {
  * Attempts to get 'Fantasy Level' or Rank if available.
  */
 export const getUserProfile = async () => {
-    const performFetch = async (isRetry = false) => {
-        const headers = await getHeaders();
-        // Fetch broad user data. 
-        // We use 'games;game_codes=nfl' which nests leagues and teams automatically.
-        const url = `${YAHOO_BASE_URL}/users;use_login=1/games;game_codes=nfl?format=json`;
-        console.log(`👤 Fetching User Profile - ${isRetry ? 'Retry' : 'Attempt 1'}`);
-
-        const response = await fetch(url, { headers });
-
-        if (!response.ok) {
-            if (response.status === 401 && !isRetry) {
-                console.warn('⚠️ Yahoo 401 in User Profile: Token expired. Refreshing...');
-                await refreshYahooAccessToken();
-                return performFetch(true);
-            }
-            const text = await response.text();
-            throw new Error(`Yahoo API Wrapper Error: ${response.status} ${text}`);
-        }
-        return response.json();
-    };
-
     try {
-        const data = await performFetch();
+        const path = '/users;use_login=1/games;game_codes=nfl';
+        console.log(`👤 Fetching User Profile via Proxy`);
+        const data = await callYahooProxy(path);
+        
         // Return the user object (wrapper)
         return data?.fantasy_content?.users?.['0']?.user?.[0] || null;
     } catch (error) {

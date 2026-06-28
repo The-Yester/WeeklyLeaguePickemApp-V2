@@ -11,7 +11,8 @@ import {
   Alert,
   Button,
   Image,
-  RefreshControl
+  RefreshControl,
+  Modal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -95,6 +96,34 @@ const HomeScreen = () => {
   const [leaderboardDisplayData, setLeaderboardDisplayData] = useState([]);
   const [leagueStandings, setLeagueStandings] = useState([]); // [NEW] W-L records
   const [currentWeek, setCurrentWeek] = useState(() => getInitialWeek());
+  const [showInstructions, setShowInstructions] = useState(false);
+
+  useEffect(() => {
+    const checkInstructions = async () => {
+      try {
+        const dismissed = await AsyncStorage.getItem('instructionsDismissed');
+        if (dismissed !== 'true') {
+          setShowInstructions(true);
+        }
+      } catch (e) {
+        console.warn('Failed to load instructions preference:', e);
+      }
+    };
+    checkInstructions();
+  }, []);
+
+  const handleDismissInstructions = async () => {
+    try {
+      await AsyncStorage.setItem('instructionsDismissed', 'true');
+      setShowInstructions(false);
+    } catch (e) {
+      console.error('Failed to save instructions dismissal:', e);
+    }
+  };
+
+  const handleSkipInstructions = () => {
+    setShowInstructions(false);
+  };
 
   const [matchupOfTheWeek, setMatchupOfTheWeek] = useState(null);
   const [communityTrend, setCommunityTrend] = useState(null);
@@ -711,7 +740,7 @@ const HomeScreen = () => {
             <View style={homeScreenStyles.trendCard}>
               <View style={homeScreenStyles.trendHeader}>
                 <Ionicons name="analytics" size={14} color={SECONDARY_COLOR} />
-                <Text style={homeScreenStyles.trendLabel}>COMMUNITY "LOCK"</Text>
+                <Text style={homeScreenStyles.trendLabel}>{"COMMUNITY \"LOCK\""}</Text>
               </View>
               <View style={homeScreenStyles.trendContent}>
                 <Text style={homeScreenStyles.trendText}>
@@ -727,7 +756,7 @@ const HomeScreen = () => {
             <View style={[homeScreenStyles.trendCard, { justifyContent: 'center', alignItems: 'center' }]}>
               <View style={homeScreenStyles.trendHeader}>
                 <Ionicons name="analytics" size={14} color={SECONDARY_COLOR} />
-                <Text style={homeScreenStyles.trendLabel}>COMMUNITY "LOCK"</Text>
+                <Text style={homeScreenStyles.trendLabel}>{"COMMUNITY \"LOCK\""}</Text>
               </View>
               <Text style={{ color: TEXT_COLOR_SUB, fontStyle: 'italic' }}>Making picks...</Text>
             </View>
@@ -785,6 +814,56 @@ const HomeScreen = () => {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Welcome Instructions Onboarding Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showInstructions}
+        onRequestClose={handleSkipInstructions}
+      >
+        <View style={homeScreenStyles.modalOverlay}>
+          <View style={homeScreenStyles.modalCard}>
+            <Text style={homeScreenStyles.modalTitle}>🏈 {"Welcome to Weekly Pick'em!"}</Text>
+            
+            <ScrollView style={homeScreenStyles.modalContentContainer} showsVerticalScrollIndicator={false}>
+              <View style={homeScreenStyles.modalContent}>
+                <Text style={homeScreenStyles.modalParagraph}>
+                  {"This is the ultimate weekly pick'em companion for your fantasy football season, automatically synced with your personal "}<Text style={homeScreenStyles.modalHighlightText}>Yahoo Fantasy Football League</Text>!
+                </Text>
+
+                <Text style={homeScreenStyles.modalParagraph}>
+                  📢 <Text style={homeScreenStyles.boldText}>Turn on reminders:</Text> Tap the <Text style={homeScreenStyles.modalHighlightText}>settings gear icon (⚙️)</Text> in the top-right corner to enable push reminders, so you never forget to submit your picks before the weekly deadline.
+                </Text>
+
+                <Text style={homeScreenStyles.modalParagraph}>
+                  🔒 <Text style={homeScreenStyles.boldText}>Deadlines:</Text> Picks lock every Thursday during the regular season by <Text style={homeScreenStyles.boldText}>7:15 PM CT</Text> (or <Text style={homeScreenStyles.boldText}>Noon</Text> for holiday slate games).
+                </Text>
+
+                <Text style={homeScreenStyles.modalParagraph}>
+                  💬 <Text style={homeScreenStyles.boldText}>Social Wall:</Text> Tap your <Text style={homeScreenStyles.modalHighlightText}>profile icon (👤)</Text> next to settings. Tap other managers to check out their pages—{"just like MySpace! Customize your bio, set your mood status, smack talk on their wall, and see all the badges they've won!"}
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={homeScreenStyles.modalButtonRow}>
+              <TouchableOpacity
+                style={[homeScreenStyles.modalButton, homeScreenStyles.skipButton]}
+                onPress={handleSkipInstructions}
+              >
+                <Text style={homeScreenStyles.skipButtonText}>Skip</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[homeScreenStyles.modalButton, homeScreenStyles.dismissButton]}
+                onPress={handleDismissInstructions}
+              >
+                <Text style={homeScreenStyles.dismissButtonText}>Got It / Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1066,7 +1145,87 @@ const homeScreenStyles = StyleSheet.create({
 
   // Legacy / Misc
   teamAbbr: { color: TEXT_COLOR_MAIN, fontWeight: 'bold', fontSize: 16 },
-  projPoints: { color: TEXT_COLOR_SUB, fontSize: 12 }
+  projPoints: { color: TEXT_COLOR_SUB, fontSize: 12 },
+
+  // Onboarding Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(13, 27, 42, 0.9)', // Dark overlay matching PRIMARY_COLOR
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: CARD_BACKGROUND,
+    width: '95%',
+    maxWidth: 400,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.3)', // Cyan border matching SECONDARY_COLOR
+    padding: 20,
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  modalContentContainer: {
+    marginBottom: 20,
+  },
+  modalContent: {
+    gap: 14,
+  },
+  modalParagraph: {
+    color: TEXT_COLOR_SUB,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalHighlightText: {
+    color: SECONDARY_COLOR,
+    fontWeight: 'bold',
+  },
+  boldText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  skipButtonText: {
+    color: TEXT_COLOR_SUB,
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  dismissButton: {
+    backgroundColor: ACCENT_COLOR,
+  },
+  dismissButtonText: {
+    color: PRIMARY_COLOR,
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
 });
 
 export default HomeScreen;

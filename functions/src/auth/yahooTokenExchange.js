@@ -25,9 +25,9 @@ async function getSecret(secretName) {
  */
 exports.exchangeYahooCodeForToken = async (request) => {
   // Callable functions wrap data in `request.data`
-  const { code, code_verifier, redirect_uri } = request.data || {};
+  const { code, code_verifier, redirect_uri, currentUid } = request.data || {};
 
-  console.log('📦 exchangeYahooCodeForToken called with:', { code, hasVerifier: !!code_verifier, redirect_uri });
+  console.log('📦 exchangeYahooCodeForToken called with:', { code, hasVerifier: !!code_verifier, redirect_uri, currentUid });
 
   if (!code || !code_verifier || !redirect_uri) {
     throw new HttpsError('invalid-argument', 'Missing code, code_verifier, or redirect_uri');
@@ -90,34 +90,39 @@ exports.exchangeYahooCodeForToken = async (request) => {
     const email = payload.email;
     console.log('👤 Yahoo User ID (sub):', yahooUserId, 'Email:', email);
 
-    let uid = yahooUserId;
-    if (email) {
-      try {
-        // Look up if a user already exists with this email address
-        const userRecord = await admin.auth().getUserByEmail(email);
-        uid = userRecord.uid;
-        console.log('🔗 Found existing Firebase user with email:', email, 'Using existing UID:', uid);
-      } catch (error) {
-        if (error.code === 'auth/user-not-found') {
-          console.log('👤 No existing user found for email:', email, '. Pre-creating user with Yahoo GUID...');
-          try {
-            // Create the user so the email is registered in Firebase Auth
-            await admin.auth().createUser({
-              uid: yahooUserId,
-              email: email,
-              displayName: payload.name || payload.nickname || null,
-              photoURL: payload.picture || null,
-              emailVerified: payload.email_verified || false,
-            });
-            console.log('✅ Pre-created Firebase user successfully.');
-          } catch (createError) {
-            console.warn('⚠️ Could not pre-create user (might already exist by UID):', createError.message);
+    let uid = currentUid;
+    if (!uid) {
+      uid = yahooUserId;
+      if (email) {
+        try {
+          // Look up if a user already exists with this email address
+          const userRecord = await admin.auth().getUserByEmail(email);
+          uid = userRecord.uid;
+          console.log('🔗 Found existing Firebase user with email:', email, 'Using existing UID:', uid);
+        } catch (error) {
+          if (error.code === 'auth/user-not-found') {
+            console.log('👤 No existing user found for email:', email, '. Pre-creating user with Yahoo GUID...');
+            try {
+              // Create the user so the email is registered in Firebase Auth
+              await admin.auth().createUser({
+                uid: yahooUserId,
+                email: email,
+                displayName: payload.name || payload.nickname || null,
+                photoURL: payload.picture || null,
+                emailVerified: payload.email_verified || false,
+              });
+              console.log('✅ Pre-created Firebase user successfully.');
+            } catch (createError) {
+              console.warn('⚠️ Could not pre-create user (might already exist by UID):', createError.message);
+            }
+          } else {
+            console.error('❌ Error calling getUserByEmail:', error);
+            throw new HttpsError('internal', 'Error checking existing user');
           }
-        } else {
-          console.error('❌ Error calling getUserByEmail:', error);
-          throw new HttpsError('internal', 'Error checking existing user');
         }
       }
+    } else {
+      console.log('🔗 Linking Yahoo account to current signed-in Firebase user:', uid);
     }
 
     // Create Firebase Custom Token using the mapped UID
@@ -126,6 +131,15 @@ exports.exchangeYahooCodeForToken = async (request) => {
     });
 
     console.log('✅ Firebase Custom Token created for UID:', uid);
+
+    // 🔐 Store tokens in Firestore for use by the Cloud Function proxy
+    const tokenDocRef = admin.firestore().collection('users').doc(uid).collection('oauth').doc('yahoo');
+    await tokenDocRef.set({
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_at: Date.now() + (tokenData.expires_in ?? 3600) * 1000,
+    }, { merge: true });
+    console.log('📥 Saved Yahoo tokens to Firestore for UID:', uid);
 
     // Return everything client might need
     return {

@@ -3,8 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useSegments, SplashScreen } from 'expo-router';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut, signInAnonymously } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 
 const AuthContext = createContext(null);
 
@@ -166,6 +169,49 @@ export function AuthProvider({ children }) {
         };
         loadTokens();
     }, []);
+
+    useEffect(() => {
+        const registerForPushNotifications = async (uid) => {
+            try {
+                if (Platform.OS === 'web') return;
+
+                const { status: existingStatus } = await Notifications.getPermissionsAsync();
+                let finalStatus = existingStatus;
+                if (existingStatus !== 'granted') {
+                    const { status } = await Notifications.requestPermissionsAsync();
+                    finalStatus = status;
+                }
+                if (finalStatus !== 'granted') {
+                    console.log('Push notification permission not granted.');
+                    return;
+                }
+
+                if (Platform.OS === 'android') {
+                    await Notifications.setNotificationChannelAsync('default', {
+                        name: 'default',
+                        importance: Notifications.AndroidImportance.MAX,
+                        vibrationPattern: [0, 250, 250, 250],
+                        lightColor: '#FF231F7C',
+                    });
+                }
+
+                const projectId = Constants.expoConfig?.extra?.eas?.projectId || "1a3ac46c-372c-43c5-88c3-86c01b32981d";
+                const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+                const token = tokenData.data;
+                console.log('🚀 Expo Push Token retrieved:', token);
+
+                const userRef = doc(db, 'users', uid);
+                await updateDoc(userRef, { expoPushToken: token });
+                console.log('✅ Push token stored in Firestore for user:', uid);
+            } catch (e) {
+                console.warn('Failed to register for push notifications:', e);
+            }
+        };
+
+        if (user && user.uid && user.username !== 'Anonymous') {
+            registerForPushNotifications(user.uid);
+        }
+    }, [user]);
 
     return (
         <AuthContext.Provider

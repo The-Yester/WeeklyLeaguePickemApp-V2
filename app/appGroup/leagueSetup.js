@@ -83,7 +83,7 @@ export default function LeagueSetupScreen() {
         }
     };
 
-    if (!accessToken) {
+    if (!accessToken && !user?.teamKey) {
         return (
             <View style={styles.container}>
                 <View style={styles.content}>

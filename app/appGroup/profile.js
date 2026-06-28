@@ -23,8 +23,6 @@ import { useRouter, useLocalSearchParams, Link, useFocusEffect, Stack } from 'ex
 import { useAuth } from '../../src/context/AuthContext';
 import { doc, getDoc, updateDoc, collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../../src/config/firebase';
-import * as Linking from 'expo-linking'; // Ensure Linking is imported
-import { getLeagueStandings } from '../../src/services/yahooFantasy'; // [NEW] Import Standings
 
 // --- THEME COLORS (Match Home Screen) ---
 const PRIMARY_COLOR = '#0D1B2A';    // Deep Navy Background
@@ -94,6 +92,31 @@ const getSpiritAnimal = (rank, accuracy) => {
   if (accuracy > 65) return { animal: 'Hawk', icon: 'eye-outline', desc: 'Eyes on the Prize', color: '#4FC3F7' };
   if (rank > 8) return { animal: 'Turtle', icon: 'happy-outline', desc: 'Slow & Steady', color: '#AED581' };
   return { animal: 'Fox', icon: 'flash-outline', desc: 'Cunning & Quick', color: '#FF8A65' };
+};
+
+const sendPushNotification = async (expoPushToken, title, body) => {
+  try {
+    const message = {
+      to: expoPushToken,
+      sound: 'default',
+      title: title,
+      body: body,
+      data: { type: 'smack_talk' },
+    };
+
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+    console.log('📣 Smack talk push notification sent:', await res.json());
+  } catch (error) {
+    console.error('❌ Failed to send push notification:', error);
+  }
 };
 
 const ProfileScreen = () => {
@@ -246,9 +269,7 @@ const ProfileScreen = () => {
       }
 
       // 4. Process Remaining Data
-      const allUsers = (usersSnapshot && Array.isArray(usersSnapshot.docs))
-        ? usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }))
-        : [];
+      const allUsers = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
       const userMap = new Map(allUsers.map(u => [u.uid, u]));
 
       const fetchedComments = commentsSnapshot.docs.map(doc => {
@@ -258,7 +279,13 @@ const ProfileScreen = () => {
       });
 
       setComments(fetchedComments);
-      setLeagueMates(allUsers.filter(u => u.uid !== profileUserId));
+      
+      // Filter managers to only show signed-in managers in the SAME league
+      if (leagueKeyToUse) {
+        setLeagueMates(allUsers.filter(u => u.uid !== profileUserId && u.leagueKey === leagueKeyToUse));
+      } else {
+        setLeagueMates([]);
+      }
 
       let allPicksForUser = [];
       picksSnapshot.forEach((weekDoc) => {
@@ -325,9 +352,10 @@ const ProfileScreen = () => {
       return;
     }
     try {
+      const commentText = newComment.trim();
       const commentsCollectionRef = collection(db, "users", profileUserId, "comments");
       await addDoc(commentsCollectionRef, {
-        text: newComment.trim(),
+        text: commentText,
         authorName: loggedInUser.name || loggedInUser.username,
         authorId: loggedInUser.uid,
         timestamp: serverTimestamp(),
@@ -335,6 +363,16 @@ const ProfileScreen = () => {
       setNewComment('');
       Alert.alert("Success", "Your comment has been posted!");
       loadAllData();
+
+      // Trigger Push Notification if posting to someone else's profile who has a registered token
+      if (profileUserId !== loggedInUser.uid && profileData?.expoPushToken) {
+        const commentAuthor = loggedInUser.teamName || loggedInUser.name || loggedInUser.username || "Someone";
+        sendPushNotification(
+          profileData.expoPushToken,
+          "New Smack Talk Comment!",
+          `${commentAuthor} commented on your profile: "${commentText}"`
+        );
+      }
     } catch (e) {
       console.error("Failed to add comment:", e);
       Alert.alert("Error", "Could not post your comment.");
@@ -514,25 +552,19 @@ const ProfileScreen = () => {
               <ProfileSection title="Managers" iconName="people-outline">
                 {leagueMates.length > 0 ? leagueMates.slice(0, 12).map(mate => (
                   <View key={mate.uid}>
-                    <Link href={{ pathname: '/(app)/home/profile', params: { userId: mate.uid } }} asChild>
+                    <Link href={{ pathname: '/appGroup/profile', params: { userId: mate.uid } }} asChild>
                       <TouchableOpacity style={styles.friendItemContainer}>
-                        <Ionicons name="person-outline" size={16} color={SECONDARY_COLOR} style={{ marginRight: 5 }} />
-                        <Text style={styles.friendItem}>{mate.name || mate.username}</Text>
+                        {mate.teamLogo ? (
+                          <Image source={{ uri: mate.teamLogo }} style={{ width: 18, height: 18, borderRadius: 9, marginRight: 6 }} />
+                        ) : (
+                          <Ionicons name="person-outline" size={16} color={SECONDARY_COLOR} style={{ marginRight: 5 }} />
+                        )}
+                        <Text style={styles.friendItem}>{mate.teamName || mate.name || mate.username || 'Unnamed Manager'}</Text>
                       </TouchableOpacity>
                     </Link>
                   </View>
                 )) : <Text style={styles.smallTextMuted}>No other managers found.</Text>}
-                {leagueMates.length > 8 && <Text style={styles.linkText}>...and more!</Text>}
-              </ProfileSection>
-
-              <ProfileSection title="The League Record" iconName="football-outline">
-                <TouchableOpacity
-                  style={styles.yahooLinkButton}
-                  onPress={() => Linking.openURL('https://football.fantasysports.yahoo.com/f1/66645?lhst=stand#leaguehomestandings')}
-                >
-                  <Ionicons name="logo-yahoo" size={30} color={TEXT_COLOR_MAIN} style={{ marginRight: 8 }} />
-                  <Text style={styles.yahooLinkButtonText}>View on Y!</Text>
-                </TouchableOpacity>
+                {leagueMates.length > 12 && <Text style={styles.linkText}>...and more!</Text>}
               </ProfileSection>
             </View>
           </View>

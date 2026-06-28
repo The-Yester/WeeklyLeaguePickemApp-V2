@@ -77,7 +77,8 @@ export function useYahooAuth() {
             const result = await yahooTokenExchange({
                 code,
                 code_verifier: codeVerifier,
-                redirect_uri: redirectUri
+                redirect_uri: redirectUri,
+                currentUid: auth.currentUser?.uid || null
             });
 
             const data = result.data;
