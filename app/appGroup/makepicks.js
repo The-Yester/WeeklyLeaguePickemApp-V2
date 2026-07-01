@@ -206,7 +206,12 @@ const MakePicksScreen = ({ route }) => {
         distribution[m.UniqueID] = { awayVotes: 0, homeVotes: 0, totalPicks: 0 };
       });
 
-      await Promise.all(usersSnap.docs.map(async (userDoc) => {
+      const relevantUsers = usersSnap.docs.filter(uDoc => {
+        const uData = uDoc.data();
+        return uData && uData.leagueKey === leagueKey;
+      });
+
+      await Promise.all(relevantUsers.map(async (userDoc) => {
         const userId = userDoc.id;
         const pickDocRef = doc(db, "users", userId, "picks", `week_${week}`);
         const pickSnap = await getDoc(pickDocRef);

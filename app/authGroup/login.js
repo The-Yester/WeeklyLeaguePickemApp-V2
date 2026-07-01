@@ -1,5 +1,5 @@
 // app/authGroup/login.js
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -13,17 +13,37 @@ import { useYahooAuth } from '../../src/hooks/useYahooAuth';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import * as Google from 'expo-auth-session/providers/google';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithCredential, OAuthProvider, signInAnonymously } from 'firebase/auth';
 import { GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_WEB_CLIENT_ID } from '../../src/config/google';
 import { auth, db } from '../../src/config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { BlurView } from 'expo-blur';
 import { FontAwesome } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 export default function Login() {
     const { isLoading, promptAsync, isReady } = useYahooAuth();
     const { code } = useLocalSearchParams();
     const { signIn } = useAuth();
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+    const [logoTapCount, setLogoTapCount] = useState(0);
+
+    const handleLogoPress = () => {
+        setLogoTapCount((prev) => {
+            const nextCount = prev + 1;
+            if (nextCount === 5) {
+                Alert.alert("Demo Mode Unlocked", "The 'Sign in with Demo Account' option is now visible.");
+            }
+            return nextCount;
+        });
+    };
+
+    useEffect(() => {
+        AppleAuthentication.isAvailableAsync().then((available) => {
+            setIsAppleAvailable(available);
+        });
+    }, []);
 
     const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
         iosClientId: GOOGLE_IOS_CLIENT_ID,
@@ -33,6 +53,7 @@ export default function Login() {
 
     useEffect(() => {
         if (googleResponse?.type === 'success') {
+            setIsAuthenticating(true);
             const { id_token } = googleResponse.params;
             const credential = GoogleAuthProvider.credential(id_token);
             signInWithCredential(auth, credential)
@@ -71,6 +92,9 @@ export default function Login() {
                 .catch((error) => {
                     console.error('❌ Google Sign-In error', error);
                     Alert.alert("Google Login Error", error.message);
+                })
+                .finally(() => {
+                    setIsAuthenticating(false);
                 });
         }
     }, [googleResponse]);
@@ -87,6 +111,115 @@ export default function Login() {
         }
     };
 
+    const handleAppleLogin = async () => {
+        try {
+            setIsAuthenticating(true);
+            const credential = await AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+            });
+
+            const { identityToken } = credential;
+            if (!identityToken) {
+                throw new Error("No identity token returned from Apple");
+            }
+
+            const provider = new OAuthProvider('apple.com');
+            const firebaseCredential = provider.credential({
+                idToken: identityToken,
+            });
+
+            const userCredential = await signInWithCredential(auth, firebaseCredential);
+            const { uid, email, displayName } = userCredential.user;
+
+            let name = displayName;
+            if (credential.fullName) {
+                const { givenName, familyName } = credential.fullName;
+                if (givenName) {
+                    name = familyName ? `${givenName} ${familyName}` : givenName;
+                }
+            }
+
+            const userRef = doc(db, 'users', uid);
+            const userSnap = await getDoc(userRef);
+
+            let userData;
+            if (!userSnap.exists()) {
+                userData = {
+                    uid,
+                    email: email || credential.email || '',
+                    username: name || email?.split('@')[0] || `AppleUser_${uid.substring(0, 6)}`,
+                    createdAt: serverTimestamp(),
+                    lastLogin: serverTimestamp(),
+                    roles: ['user'],
+                };
+                await setDoc(userRef, userData);
+            } else {
+                await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
+                userData = userSnap.data();
+            }
+
+            await signIn(userData, null, null);
+        } catch (error) {
+            if (error.code === 'ERR_CANCELED') {
+                return; // User cancelled
+            }
+            console.error("Apple Sign-In Error:", error);
+            Alert.alert("Apple Sign-In Error", error.message);
+        } finally {
+            setIsAuthenticating(false);
+        }
+    };
+
+    const handleDemoLogin = async () => {
+        try {
+            setIsAuthenticating(true);
+            console.log("🔑 Logging in as Demo/Guest account...");
+            const userCredential = await signInAnonymously(auth);
+            const { uid } = userCredential.user;
+            
+            const userRef = doc(db, 'users', uid);
+            const userSnap = await getDoc(userRef);
+
+            let userData;
+            if (!userSnap.exists()) {
+                userData = {
+                    uid,
+                    email: 'demo@example.com',
+                    username: 'Demo User',
+                    displayName: 'Demo User',
+                    createdAt: serverTimestamp(),
+                    lastLogin: serverTimestamp(),
+                    roles: ['user', 'demo'],
+                    isDemo: true,
+                    leagueKey: 'demo-league',
+                    leagueName: 'Demo Fantasy League',
+                    teamKey: 'demo_team_1',
+                    teamName: 'Gridiron Gladiators',
+                    teamLogo: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100'
+                };
+                await setDoc(userRef, userData);
+            } else {
+                await setDoc(userRef, { 
+                    lastLogin: serverTimestamp(),
+                    leagueKey: 'demo-league',
+                    isDemo: true
+                }, { merge: true });
+                userData = userSnap.data();
+            }
+
+            console.log("✅ Demo account loaded:", userData.username);
+            await signIn(userData, null, null);
+        } catch (error) {
+            console.error("Demo login error:", error);
+            Alert.alert("Demo Login Error", error.message || "Failed to log in to demo mode.");
+        } finally {
+            setIsAuthenticating(false);
+        }
+    };
+
     return (
         <View style={styles.container}>
             {/* Futuristic Glowing Background Accents */}
@@ -98,14 +231,18 @@ export default function Login() {
             <View style={styles.glassCard}>
                 <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
 
-                <View style={styles.logoContainer}>
+                <TouchableOpacity
+                    activeOpacity={0.95}
+                    onPress={handleLogoPress}
+                    style={styles.logoContainer}
+                >
                     <Image source={require('../../assets/Pickem_Logo.png')} style={styles.logo} />
-                </View>
+                </TouchableOpacity>
 
-                <Text style={styles.title}>Weekly League Pick'em</Text>
+                <Text style={styles.title}>{"Weekly League Pick'em"}</Text>
                 <Text style={styles.subtitle}>Predict. Compete. Win.</Text>
 
-                {isLoading ? (
+                {(isLoading || isAuthenticating) ? (
                     <View style={styles.loaderContainer}>
                         <ActivityIndicator size="large" color="#FFFFFF" />
                         <Text style={styles.loaderText}>Authenticating...</Text>
@@ -130,6 +267,28 @@ export default function Login() {
                             <FontAwesome name="google" size={18} color="#EA4335" style={styles.buttonIcon} />
                             <Text style={styles.googleButtonText}>Sign in with Google</Text>
                         </TouchableOpacity>
+
+                        {/* Apple Sign-In Button (iOS only/Apple auth available) */}
+                        {isAppleAvailable && (
+                            <AppleAuthentication.AppleAuthenticationButton
+                                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                                cornerRadius={18}
+                                style={styles.appleButton}
+                                onPress={handleAppleLogin}
+                            />
+                        )}
+
+                        {/* Guest / Demo Mode Button (Secret tap gesture to reveal) */}
+                        {logoTapCount >= 5 && (
+                            <TouchableOpacity
+                                onPress={handleDemoLogin}
+                                style={[styles.loginButton, styles.demoButton]}
+                            >
+                                <FontAwesome name="eye" size={18} color="#10b981" style={styles.buttonIcon} />
+                                <Text style={styles.demoButtonText}>Sign in with Demo Account</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 )}
             </View>
@@ -256,6 +415,23 @@ const styles = StyleSheet.create({
     googleButton: {
         backgroundColor: '#FFFFFF', // Clean Google White
         marginTop: 16,
+    },
+    appleButton: {
+        width: '100%',
+        height: 56,
+        marginTop: 16,
+    },
+    demoButton: {
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderColor: '#10b981', // Emerald green brand color
+        marginTop: 16,
+    },
+    demoButtonText: {
+        color: '#10b981',
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.3,
     },
     buttonIcon: {
         marginRight: 14,

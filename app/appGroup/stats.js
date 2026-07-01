@@ -99,7 +99,9 @@ const StatsScreen = () => {
 
       // 2. Fetch Users
       const usersSnap = await getDocs(collection(db, "users"));
-      const allUsers = usersSnap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      const allUsers = usersSnap.docs
+        .map(doc => ({ uid: doc.id, ...doc.data() }))
+        .filter(u => u.leagueKey === leagueKey);
 
       // 3. Fetch Season Matchups (Limited Scope for Performance)
       // We will fetch up to determinedWeek.

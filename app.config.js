@@ -19,6 +19,7 @@ export default {
       bundleIdentifier: "com.ryester.WeeklyLeaguePickemApp",
       buildNumber: "2",
       icon: "./assets/icon.png",
+      usesAppleSignIn: true,
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSPhotoLibraryUsageDescription: "This app needs access to your photo library so you can select a profile picture.",
@@ -59,7 +60,8 @@ export default {
       "expo-image-picker",
       "expo-notifications",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ],
     experiments: {
       typedRoutes: true

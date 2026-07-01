@@ -91,7 +91,7 @@ export function AuthProvider({ children }) {
         setInAuthGroup(isInAuthGroup);
         console.log(`AuthProvider (redirect effect): User: ${user?.username ?? 'null'}, InAuthGroup: ${isInAuthGroup}`);
 
-        if (user && isInAuthGroup && user.username !== 'Anonymous') {
+        if (user && isInAuthGroup && user.username !== 'Anonymous' && user.username !== 'New User') {
             // [NEW] Check if league is setup
             // logic moved to redirect effect below or handled by protected layout?
             // For now, prevent immediate redirect if league is missing? 
@@ -110,12 +110,24 @@ export function AuthProvider({ children }) {
     const signIn = async (userData, yahooAccessToken = null, yahooRefreshToken = null) => {
         try {
             await AsyncStorage.setItem('currentUser', JSON.stringify(userData));
+            if (userData.leagueKey) {
+                setLeagueKey(userData.leagueKey);
+                await AsyncStorage.setItem('leagueKey', userData.leagueKey);
+            }
             if (yahooAccessToken) {
-                await SecureStore.setItemAsync('yahoo_access_token', yahooAccessToken);
+                if (Platform.OS !== 'web') {
+                    await SecureStore.setItemAsync('yahoo_access_token', yahooAccessToken);
+                } else {
+                    await AsyncStorage.setItem('yahoo_access_token', yahooAccessToken);
+                }
                 setAccessToken(yahooAccessToken);
             }
             if (yahooRefreshToken) {
-                await SecureStore.setItemAsync('yahoo_refresh_token', yahooRefreshToken);
+                if (Platform.OS !== 'web') {
+                    await SecureStore.setItemAsync('yahoo_refresh_token', yahooRefreshToken);
+                } else {
+                    await AsyncStorage.setItem('yahoo_refresh_token', yahooRefreshToken);
+                }
                 setRefreshToken(yahooRefreshToken);
             }
             setUser(prev => (prev && prev.uid === userData.uid ? { ...prev, ...userData } : userData));
@@ -128,8 +140,13 @@ export function AuthProvider({ children }) {
     const signOut = async () => {
         try {
             await firebaseSignOut(auth);
-            await SecureStore.deleteItemAsync('yahoo_access_token');
-            await SecureStore.deleteItemAsync('yahoo_refresh_token');
+            if (Platform.OS !== 'web') {
+                await SecureStore.deleteItemAsync('yahoo_access_token');
+                await SecureStore.deleteItemAsync('yahoo_refresh_token');
+            } else {
+                await AsyncStorage.removeItem('yahoo_access_token');
+                await AsyncStorage.removeItem('yahoo_refresh_token');
+            }
             setAccessToken(null);
             setRefreshToken(null);
             setLeagueKey(null);
@@ -145,17 +162,29 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const loadTokens = async () => {
-            let storedAccessToken = await SecureStore.getItemAsync('yahoo_access_token');
-            let storedRefreshToken = await SecureStore.getItemAsync('yahoo_refresh_token');
+            let storedAccessToken = null;
+            let storedRefreshToken = null;
 
-            // MIGRATION: Check AsyncStorage if not in SecureStore
-            if (!storedAccessToken) {
+            if (Platform.OS === 'web') {
                 storedAccessToken = await AsyncStorage.getItem('yahoo_access_token');
-                if (storedAccessToken) await SecureStore.setItemAsync('yahoo_access_token', storedAccessToken);
-            }
-            if (!storedRefreshToken) {
                 storedRefreshToken = await AsyncStorage.getItem('yahoo_refresh_token');
-                if (storedRefreshToken) await SecureStore.setItemAsync('yahoo_refresh_token', storedRefreshToken);
+            } else {
+                try {
+                    storedAccessToken = await SecureStore.getItemAsync('yahoo_access_token');
+                    storedRefreshToken = await SecureStore.getItemAsync('yahoo_refresh_token');
+                } catch (e) {
+                    console.warn("SecureStore read failed, falling back to AsyncStorage:", e);
+                }
+
+                // MIGRATION: Check AsyncStorage if not in SecureStore
+                if (!storedAccessToken) {
+                    storedAccessToken = await AsyncStorage.getItem('yahoo_access_token');
+                    if (storedAccessToken) await SecureStore.setItemAsync('yahoo_access_token', storedAccessToken);
+                }
+                if (!storedRefreshToken) {
+                    storedRefreshToken = await AsyncStorage.getItem('yahoo_refresh_token');
+                    if (storedRefreshToken) await SecureStore.setItemAsync('yahoo_refresh_token', storedRefreshToken);
+                }
             }
 
             if (storedAccessToken) {

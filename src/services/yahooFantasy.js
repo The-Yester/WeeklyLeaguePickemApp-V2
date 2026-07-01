@@ -1,5 +1,93 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { app } from '../config/firebase';
+import { app, auth } from '../config/firebase';
+
+// --- MOCK YAHOO DATA FOR DEMO USER ---
+const MOCK_TEAMS = [
+    { key: 'demo_team_1', name: 'Gridiron Gladiators', logo: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100', ab: 'GG' },
+    { key: 'demo_team_2', name: 'Touchdown Titans', logo: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100', ab: 'TT' },
+    { key: 'demo_team_3', name: 'Red Zone Rangers', logo: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=100', ab: 'RZR' },
+    { key: 'demo_team_4', name: 'Blitz Brigade', logo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100', ab: 'BB' },
+    { key: 'demo_team_5', name: 'Hail Mary Heroes', logo: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100', ab: 'HMH' },
+    { key: 'demo_team_6', name: 'End Zone Emperors', logo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100', ab: 'EZE' },
+    { key: 'demo_team_7', name: 'Sack Masters', logo: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100', ab: 'SM' },
+    { key: 'demo_team_8', name: 'Fantasy Footballers', logo: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100', ab: 'FF' }
+];
+
+const getMockWeeklyMatchups = (week) => {
+    const weekNum = week === 'current' ? 1 : Number(week);
+    const pairings = [
+        [[1, 2], [3, 4], [5, 6], [7, 8]], // Week 1 / 5 / 9 / 13 / 17
+        [[1, 3], [2, 4], [5, 7], [6, 8]], // Week 2 / 6 / 10 / 14 / 18
+        [[1, 4], [2, 3], [5, 8], [6, 7]], // Week 3 / 7 / 11 / 15
+        [[1, 5], [2, 6], [3, 7], [4, 8]], // Week 4 / 8 / 12 / 16
+    ];
+    
+    const pairingIndex = Math.max(0, (weekNum - 1) % pairings.length);
+    const weekPairings = pairings[pairingIndex];
+    
+    return weekPairings.map(([t1Idx, t2Idx], idx) => {
+        const team1 = MOCK_TEAMS[t1Idx - 1];
+        const team2 = MOCK_TEAMS[t2Idx - 1];
+        
+        const isFinished = weekNum < 3;
+        const status = isFinished ? 'postevent' : 'scheduled';
+        
+        const seed1 = (weekNum * 7 + idx * 13) % 30;
+        const seed2 = (weekNum * 11 + idx * 17) % 30;
+        const proj1 = 95.0 + seed1;
+        const proj2 = 92.0 + seed2;
+        
+        const act1 = isFinished ? proj1 + ((seed1 - 15) / 2) : 0;
+        const act2 = isFinished ? proj2 + ((seed2 - 15) / 2) : 0;
+        
+        let winningTeam = null;
+        if (isFinished) {
+            winningTeam = act1 > act2 ? team1.name : team2.name;
+        }
+        
+        return {
+            UniqueID: `yahoo_${weekNum}_${team1.key}_${team2.key}`,
+            Week: weekNum,
+            isFinished,
+            status,
+            MatchURL: 'https://football.fantasysports.yahoo.com',
+            GameDate: `Week ${weekNum}`,
+            GameTimeET: isFinished ? 'Final' : 'Sunday 1:00 PM',
+            
+            // Team 1 (Away)
+            AwayTeamKey: team1.key,
+            AwayTeamName: team1.name,
+            AwayTeamAB: team1.ab,
+            AwayTeamLogo: team1.logo,
+            AwayTeamProjectedPoints: Number(proj1.toFixed(1)),
+            AwayTeamActualPoints: Number(act1.toFixed(1)),
+            
+            // Team 2 (Home)
+            HomeTeamKey: team2.key,
+            HomeTeamName: team2.name,
+            HomeTeamAB: team2.ab,
+            HomeTeamLogo: team2.logo,
+            HomeTeamProjectedPoints: Number(proj2.toFixed(1)),
+            HomeTeamActualPoints: Number(act2.toFixed(1)),
+            
+            WinningTeam: winningTeam
+        };
+    });
+};
+
+const getMockLeagueStandings = () => {
+    return [
+        { team_key: 'demo_team_1', name: 'Gridiron Gladiators', logo_url: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100', rank: 1, wins: 2, losses: 0, ties: 0, points: 235.4 },
+        { team_key: 'demo_team_2', name: 'Touchdown Titans', logo_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100', rank: 2, wins: 2, losses: 0, ties: 0, points: 218.2 },
+        { team_key: 'demo_team_3', name: 'Red Zone Rangers', logo_url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=100', rank: 3, wins: 1, losses: 1, ties: 0, points: 210.5 },
+        { team_key: 'demo_team_4', name: 'Blitz Brigade', logo_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100', rank: 4, wins: 1, losses: 1, ties: 0, points: 198.6 },
+        { team_key: 'demo_team_5', name: 'Hail Mary Heroes', logo_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100', rank: 5, wins: 1, losses: 1, ties: 0, points: 192.1 },
+        { team_key: 'demo_team_6', name: 'End Zone Emperors', logo_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100', rank: 6, wins: 1, losses: 1, ties: 0, points: 185.7 },
+        { team_key: 'demo_team_7', name: 'Sack Masters', logo_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100', rank: 7, wins: 0, losses: 2, ties: 0, points: 172.4 },
+        { team_key: 'demo_team_8', name: 'Fantasy Footballers', logo_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100', rank: 8, wins: 0, losses: 2, ties: 0, points: 160.8 }
+    ];
+};
+
 
 const callYahooProxy = async (path, method = 'GET', body = null) => {
     try {
@@ -19,6 +107,12 @@ const callYahooProxy = async (path, method = 'GET', body = null) => {
  */
 export const getWeeklyMatchups = async (week = 'current', leagueKey) => {
     if (!leagueKey) throw new Error('getWeeklyMatchups requires a valid leagueKey');
+
+    // Bypass for Demo mode
+    if (leagueKey === 'demo-league' || (typeof leagueKey === 'string' && leagueKey.includes('demo'))) {
+        console.log(`🏈 Demo Mode: Returning mock matchups for Week ${week}`);
+        return getMockWeeklyMatchups(week);
+    }
 
     try {
         const weekParam = week === 'current' ? '' : `;week=${week}`;
@@ -382,6 +476,12 @@ const parseYahooStandings = (standingsWrapper) => {
 export const getLeagueStandings = async (leagueKey) => {
     if (!leagueKey) throw new Error('getLeagueStandings requires a valid leagueKey');
 
+    // Bypass for Demo mode
+    if (leagueKey === 'demo-league' || (typeof leagueKey === 'string' && leagueKey.includes('demo'))) {
+        console.log(`🏆 Demo Mode: Returning mock standings for League: ${leagueKey}`);
+        return getMockLeagueStandings();
+    }
+
     try {
         const path = `/league/${leagueKey}/standings`;
         console.log(`🏆 Fetching Standings via Proxy (League: ${leagueKey})`);
@@ -411,6 +511,10 @@ export const getLeagueStandings = async (leagueKey) => {
  */
 export const getUserStanding = async (leagueKey, teamKey) => {
     if (!leagueKey || !teamKey) return null;
+    if (leagueKey === 'demo-league' || (typeof leagueKey === 'string' && leagueKey.includes('demo'))) {
+        const standings = getMockLeagueStandings();
+        return standings.find(t => t.team_key === teamKey) || null;
+    }
     try {
         const standings = await getLeagueStandings(leagueKey);
         const myTeam = standings.find(t => t.team_key === teamKey);
@@ -427,6 +531,15 @@ export const getUserStanding = async (leagueKey, teamKey) => {
  */
 export const getUserProfile = async () => {
     try {
+        // Bypass for Demo mode
+        if (auth?.currentUser?.isAnonymous) {
+            console.log(`👤 Demo Mode: Returning mock profile`);
+            return {
+                guid: 'demo_guid',
+                is_demo: true,
+                fantasy_level: 'Diamond',
+            };
+        }
         const path = '/users;use_login=1/games;game_codes=nfl';
         console.log(`👤 Fetching User Profile via Proxy`);
         const data = await callYahooProxy(path);

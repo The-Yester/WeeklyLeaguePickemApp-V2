@@ -269,7 +269,9 @@ const ProfileScreen = () => {
       }
 
       // 4. Process Remaining Data
-      const allUsers = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      const allUsers = usersSnapshot.docs
+        .map(doc => ({ uid: doc.id, ...doc.data() }))
+        .filter(u => u.leagueKey === leagueKeyToUse);
       const userMap = new Map(allUsers.map(u => [u.uid, u]));
 
       const fetchedComments = commentsSnapshot.docs.map(doc => {

@@ -152,100 +152,141 @@ const SettingsScreen = () => {
   };
 
   const handleLogoutPress = () => {
-    Alert.alert("Logout", "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout", style: "destructive",
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (e) {
-              console.error("Logout failed:", e);
+    if (Platform.OS === 'web') {
+      const confirmLogout = window.confirm("Are you sure you want to log out?");
+      if (confirmLogout) {
+        signOut().catch(e => console.error("Logout failed:", e));
+      }
+    } else {
+      Alert.alert("Logout", "Are you sure you want to log out?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Logout", style: "destructive",
+            onPress: async () => {
+              try {
+                await signOut();
+              } catch (e) {
+                console.error("Logout failed:", e);
+              }
             }
           }
+        ]
+      );
+    }
+  };
+
+  const performAccountDeletion = async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) {
+      if (Platform.OS === 'web') {
+        window.alert("Please log out and log back in to verify identity.");
+      } else {
+        Alert.alert("Error", "Please log out and log back in to verify identity.");
+      }
+      return;
+    }
+
+    try {
+      // 1. Delete Firestore Data
+      const picksRef = collection(db, "users", firebaseUser.uid, "picks");
+      const commentsRef = collection(db, "users", firebaseUser.uid, "comments");
+      const oauthRef = collection(db, "users", firebaseUser.uid, "oauth");
+
+      const picksSnap = await getDocs(picksRef);
+      for (const d of picksSnap.docs) await deleteDoc(d.ref);
+
+      const commentsSnap = await getDocs(commentsRef);
+      for (const d of commentsSnap.docs) await deleteDoc(d.ref);
+
+      const oauthSnap = await getDocs(oauthRef);
+      for (const d of oauthSnap.docs) await deleteDoc(d.ref);
+
+      await deleteDoc(doc(db, "users", firebaseUser.uid));
+
+      // 2. Delete Auth User
+      await deleteUser(firebaseUser);
+
+      if (Platform.OS === 'web') {
+        window.alert("Your account and all associated data have been permanently deleted.");
+      } else {
+        Alert.alert("Account Deleted", "Your account and all associated data have been permanently deleted.");
+      }
+      await signOut();
+
+    } catch (error) {
+      console.error("Delete failed:", error);
+      if (error.code === 'auth/requires-recent-login') {
+        try {
+          await AsyncStorage.setItem('pendingDeleteUid', firebaseUser.uid);
+          if (Platform.OS === 'web') {
+            const reauth = window.confirm("For security reasons, deleting your account requires a recent login. Please log in again to verify your identity, and your account will be immediately deleted. Proceed?");
+            if (reauth) {
+              await signOut();
+            } else {
+              await AsyncStorage.removeItem('pendingDeleteUid');
+            }
+          } else {
+            Alert.alert(
+              "Security Verification Required",
+              "For security reasons, deleting your account requires a recent login. Please log in again to verify your identity, and your account will be immediately deleted.",
+              [
+                {
+                  text: "Cancel",
+                  style: "cancel",
+                  onPress: async () => {
+                    await AsyncStorage.removeItem('pendingDeleteUid');
+                  }
+                },
+                {
+                  text: "Log In to Delete",
+                  style: "destructive",
+                  onPress: async () => {
+                    await signOut();
+                  }
+                }
+              ]
+            );
+          }
+        } catch (e) {
+          console.error("Failed to set pending delete uid:", e);
+          if (Platform.OS === 'web') {
+            window.alert("Could not proceed with account deletion. Please try again.");
+          } else {
+            Alert.alert("Error", "Could not proceed with account deletion. Please try again.");
+          }
         }
-      ]
-    );
+      } else {
+        if (Platform.OS === 'web') {
+          window.alert("Could not delete account. Contact support.");
+        } else {
+          Alert.alert("Error", "Could not delete account. Contact support.");
+        }
+      }
+    }
   };
 
   // [FIX] Delete Account Logic
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Are you absolutely sure? This is permanent.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete My Account",
-          style: "destructive",
-          onPress: async () => {
-            const firebaseUser = auth.currentUser;
-            if (!firebaseUser) {
-              Alert.alert("Error", "Please log out and log back in to verify identity.");
-              return;
-            }
-
-            try {
-              // 1. Delete Firestore Data
-              const picksRef = collection(db, "users", firebaseUser.uid, "picks");
-              const commentsRef = collection(db, "users", firebaseUser.uid, "comments");
-              const oauthRef = collection(db, "users", firebaseUser.uid, "oauth");
-
-              const picksSnap = await getDocs(picksRef);
-              for (const d of picksSnap.docs) await deleteDoc(d.ref);
-
-              const commentsSnap = await getDocs(commentsRef);
-              for (const d of commentsSnap.docs) await deleteDoc(d.ref);
-
-              const oauthSnap = await getDocs(oauthRef);
-              for (const d of oauthSnap.docs) await deleteDoc(d.ref);
-
-              await deleteDoc(doc(db, "users", firebaseUser.uid));
-
-              // 2. Delete Auth User
-              await deleteUser(firebaseUser);
-
-              Alert.alert("Account Deleted", "Your account has been deleted.");
-              await signOut();
-
-            } catch (error) {
-              console.error("Delete failed:", error);
-              if (error.code === 'auth/requires-recent-login') {
-                try {
-                  await AsyncStorage.setItem('pendingDeleteUid', firebaseUser.uid);
-                  Alert.alert(
-                    "Security Verification Required",
-                    "For security reasons, deleting your account requires a recent login. Please log in again to verify your identity, and your account will be immediately deleted.",
-                    [
-                      {
-                        text: "Cancel",
-                        style: "cancel",
-                        onPress: async () => {
-                          await AsyncStorage.removeItem('pendingDeleteUid');
-                        }
-                      },
-                      {
-                        text: "Log In to Delete",
-                        style: "destructive",
-                        onPress: async () => {
-                          await signOut();
-                        }
-                      }
-                    ]
-                  );
-                } catch (e) {
-                  console.error("Failed to set pending delete uid:", e);
-                  Alert.alert("Error", "Could not proceed with account deletion. Please try again.");
-                }
-              } else {
-                Alert.alert("Error", "Could not delete account. Contact support.");
-              }
-            }
-          },
-        },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      const confirmDelete = window.confirm("Are you absolutely sure? This is permanent.");
+      if (confirmDelete) {
+        performAccountDeletion();
+      }
+    } else {
+      Alert.alert(
+        "Delete Account",
+        "Are you absolutely sure? This is permanent.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete My Account",
+            style: "destructive",
+            onPress: performAccountDeletion
+          }
+        ]
+      );
+    }
   };
 
   const SettingItem = ({ iconName, title, onPress, href, isDestructive, hasSwitch, switchValue, onSwitchValueChange }) => {

@@ -81,10 +81,10 @@ app.post('/token', async (req, res) => {
 
     // 🔐 Store token in Firestore
     await db.collection('yahooTokens').add({
-        userId: userId,
-        code: code,
-        token: response.data,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      userId: userId,
+      code: code,
+      token: response.data,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     console.log('📥 Firestore write confirmed for user:', userId);
 

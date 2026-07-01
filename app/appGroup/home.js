@@ -279,7 +279,9 @@ const HomeScreen = () => {
 
       setLeagueStandings(standingsResult);
 
-      const allUsers = usersSnapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+      const allUsers = usersSnapshot.docs
+        .map(doc => ({ uid: doc.id, ...doc.data() }))
+        .filter(u => u.leagueKey === leagueKey);
       setAllMatchups(matchupsResult);
 
       // [FEATURE 1] Best Matchup
@@ -368,7 +370,7 @@ const HomeScreen = () => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [loggedInUser, fetchMatchupsFromYahoo, fetchPreviousWeekMatchups, fetchStandingsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
+  }, [loggedInUser, leagueKey, fetchMatchupsFromYahoo, fetchPreviousWeekMatchups, fetchStandingsFromYahoo, fetchAllPicksForUser, calculateAllScores]);
 
   useEffect(() => {
     const checkPendingDelete = async () => {
