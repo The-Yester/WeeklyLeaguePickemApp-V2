@@ -1,39 +1,43 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useAuthRequest, makeRedirectUri } from 'expo-auth-session';
 import { Alert } from 'react-native';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth, app } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import * as WebBrowser from 'expo-web-browser';
+import * as SecureStore from 'expo-secure-store';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const discovery = {
     authorizationEndpoint: 'https://api.login.yahoo.com/oauth2/request_auth',
-    tokenEndpoint: 'https://api.login.yahoo.com/oauth2/token',
+    tokenEndpoint: 'https://api.login.yahoo.com/oauth2/get_token',
+};
+
+const SS_KEYS = {
+    verifier: 'yahoo_pkce_verifier',
 };
 
 export function useYahooAuth() {
     // Clean Redirect URI generation matching app.config.js
     // Scheme: weeklyleaguepickemapp
     // Path: yahoo (matches intent filter host)
-    const redirectUri = makeRedirectUri({
+    const redirectUri = useMemo(() => makeRedirectUri({
         scheme: 'weeklyleaguepickemapp',
         path: 'yahoo'
-    });
+    }), []);
 
     console.log('🔗 Yahoo Redirect URI:', redirectUri);
 
-    const [request, response, promptAsyncOriginal] = useAuthRequest(
-        {
-            clientId: 'dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw',
-            redirectUri,
-            scopes: ['openid', 'profile', 'email', 'fspt-r'],
-            responseType: 'code',
-            usePKCE: true,
-        },
-        discovery
-    );
+    const config = useMemo(() => ({
+        clientId: 'dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw',
+        redirectUri,
+        scopes: ['openid', 'profile', 'email', 'fspt-r'],
+        responseType: 'code',
+        usePKCE: true,
+    }), [redirectUri]);
+
+    const [request, response, promptAsyncOriginal] = useAuthRequest(config, discovery);
 
     const { signIn } = useAuth();
     const [isLoading, setIsLoading] = useState(false);
@@ -41,6 +45,10 @@ export function useYahooAuth() {
     // Wrapper to handle the async prompt cleanly
     const promptAsync = async () => {
         try {
+            if (request?.codeVerifier) {
+                await SecureStore.setItemAsync(SS_KEYS.verifier, request.codeVerifier);
+                console.log('💾 Saved PKCE code verifier to SecureStore:', request.codeVerifier);
+            }
             return await promptAsyncOriginal();
         } catch (e) {
             console.error("Yahoo Auth Prompt Error:", e);
@@ -70,13 +78,24 @@ export function useYahooAuth() {
         setIsLoading(true);
         try {
             console.log('🔄 Exchanging Yahoo code for tokens...');
+
+            // Retrieve the stored verifier to handle component unmount/remount/regenerated requests
+            let verifierToUse = codeVerifier;
+            const storedVerifier = await SecureStore.getItemAsync(SS_KEYS.verifier);
+            if (storedVerifier) {
+                console.log('💾 Retrieved original PKCE verifier from SecureStore:', storedVerifier);
+                verifierToUse = storedVerifier;
+            } else {
+                console.warn('⚠️ No PKCE verifier found in SecureStore. Using active state verifier.');
+            }
+
             const { getFunctions, httpsCallable } = require('firebase/functions');
             const functions = getFunctions(app);
             const yahooTokenExchange = httpsCallable(functions, 'yahooTokenExchange');
 
             const result = await yahooTokenExchange({
                 code,
-                code_verifier: codeVerifier,
+                code_verifier: verifierToUse,
                 redirect_uri: redirectUri,
                 currentUid: auth.currentUser?.uid || null
             });
@@ -100,6 +119,9 @@ export function useYahooAuth() {
                         data.yahoo_refresh_token
                     );
                 }
+
+                // Cleanup stored verifier on success
+                await SecureStore.deleteItemAsync(SS_KEYS.verifier);
             } else {
                 throw new Error('No custom token returned.');
             }
