@@ -35,8 +35,18 @@ exports.exchangeYahooCodeForToken = async (request) => {
 
   try {
     const clientId = await getSecret('YAHOO_CLIENT_ID');
-    // Public Client Flow (No Secret)
-    // We only use the Client ID validation + PKCE
+    let clientSecret;
+    try {
+      clientSecret = await getSecret('YAHOO_CLIENT_SECRET');
+    } catch (e) {
+      try {
+        clientSecret = await getSecret('yahoo-client-secret');
+      } catch (err) {
+        console.warn('⚠️ Could not fetch YAHOO_CLIENT_SECRET from Secret Manager:', err.message);
+      }
+    }
+
+    const isConfidential = !!(clientSecret && clientSecret !== 'your-client-secret-here');
 
     const params = new URLSearchParams();
     params.append('client_id', clientId);
@@ -45,29 +55,54 @@ exports.exchangeYahooCodeForToken = async (request) => {
     params.append('redirect_uri', redirect_uri);
     params.append('grant_type', 'authorization_code');
 
-    console.log('📤 Sending token request to Yahoo (Public Client)...');
+    console.log(`📤 Sending token request to Yahoo (${isConfidential ? 'Confidential' : 'Public'} Client)...`);
     console.log('🔍 DEBUG PARAMS:', {
       client_id_prefix: clientId ? clientId.substring(0, 5) + '...' : 'undefined',
       redirect_uri: redirect_uri,
       has_verifier: !!code_verifier,
       code_length: code ? code.length : 0,
-      mode: 'public_pkce'
+      mode: isConfidential ? 'confidential' : 'public_pkce'
     });
 
-    // No Basic Auth for Public Clients
-    // Update: Using /get_token endpoint as /token returns 404 for this client type
-    const tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    };
+
+    if (isConfidential) {
+      const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      headers['Authorization'] = `Basic ${basic}`;
+    }
+
+    let tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
+      headers,
       body: params,
     });
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
       console.error('❌ Yahoo token response error:', tokenResponse.status, errorText);
-      throw new HttpsError('internal', `Yahoo API Error: ${errorText}`);
+
+      // If Yahoo complains that a client secret is not required, retry the request without it.
+      if (isConfidential && errorText.includes('client secret not required')) {
+        console.log('🔄 Retrying Yahoo token exchange without client secret...');
+        const retryHeaders = {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        };
+        tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
+          method: 'POST',
+          headers: retryHeaders,
+          body: params,
+        });
+
+        if (!tokenResponse.ok) {
+          const retryErrorText = await tokenResponse.text();
+          console.error('❌ Yahoo token exchange retry failed:', tokenResponse.status, retryErrorText);
+          throw new HttpsError('internal', `Yahoo API Error (Retry): ${retryErrorText}`);
+        }
+      } else {
+        throw new HttpsError('internal', `Yahoo API Error: ${errorText}`);
+      }
     }
 
     const tokenData = await tokenResponse.json();
