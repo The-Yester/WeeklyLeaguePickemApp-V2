@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useAuthRequest, makeRedirectUri } from 'expo-auth-session';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth, app } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -17,6 +18,44 @@ const discovery = {
 
 const SS_KEYS = {
     verifier: 'yahoo_pkce_verifier',
+};
+
+// Safe storage wrappers to handle Web (AsyncStorage) and Native (SecureStore)
+const saveVerifier = async (verifier) => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.setItem(SS_KEYS.verifier, verifier);
+        } else {
+            await SecureStore.setItemAsync(SS_KEYS.verifier, verifier);
+        }
+    } catch (e) {
+        console.error('Failed to save verifier:', e);
+    }
+};
+
+const getVerifier = async () => {
+    try {
+        if (Platform.OS === 'web') {
+            return await AsyncStorage.getItem(SS_KEYS.verifier);
+        } else {
+            return await SecureStore.getItemAsync(SS_KEYS.verifier);
+        }
+    } catch (e) {
+        console.error('Failed to get verifier:', e);
+        return null;
+    }
+};
+
+const deleteVerifier = async () => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.removeItem(SS_KEYS.verifier);
+        } else {
+            await SecureStore.deleteItemAsync(SS_KEYS.verifier);
+        }
+    } catch (e) {
+        console.error('Failed to delete verifier:', e);
+    }
 };
 
 export function useYahooAuth() {
@@ -62,8 +101,8 @@ export function useYahooAuth() {
     const promptAsync = async () => {
         try {
             if (request?.codeVerifier) {
-                await SecureStore.setItemAsync(SS_KEYS.verifier, request.codeVerifier);
-                console.log('💾 Saved PKCE code verifier to SecureStore:', request.codeVerifier);
+                await saveVerifier(request.codeVerifier);
+                console.log('💾 Saved PKCE code verifier:', request.codeVerifier);
             }
             const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
             return await promptAsyncOriginal({
@@ -71,7 +110,11 @@ export function useYahooAuth() {
             });
         } catch (e) {
             console.error("Yahoo Auth Prompt Error:", e);
-            Alert.alert("Error", "Failed to start Yahoo Login.");
+            if (Platform.OS === 'web') {
+                alert("Failed to start Yahoo Login: " + e.message);
+            } else {
+                Alert.alert("Error", "Failed to start Yahoo Login.");
+            }
         }
     };
 
@@ -85,7 +128,11 @@ export function useYahooAuth() {
                 exchangeCode(code, request.codeVerifier);
             }
         } else if (response?.type === 'error') {
-            Alert.alert('Yahoo Sign-In', 'Sign-in failed.');
+            if (Platform.OS === 'web') {
+                alert('Yahoo Sign-In failed.');
+            } else {
+                Alert.alert('Yahoo Sign-In', 'Sign-in failed.');
+            }
         } else if (response?.type === 'dismiss') {
             // User cancelled
             console.log('Yahoo Login dismissed');
@@ -100,12 +147,12 @@ export function useYahooAuth() {
 
             // Retrieve the stored verifier to handle component unmount/remount/regenerated requests
             let verifierToUse = codeVerifier;
-            const storedVerifier = await SecureStore.getItemAsync(SS_KEYS.verifier);
+            const storedVerifier = await getVerifier();
             if (storedVerifier) {
-                console.log('💾 Retrieved original PKCE verifier from SecureStore:', storedVerifier);
+                console.log('💾 Retrieved original PKCE verifier:', storedVerifier);
                 verifierToUse = storedVerifier;
             } else {
-                console.warn('⚠️ No PKCE verifier found in SecureStore. Using active state verifier.');
+                console.warn('⚠️ No PKCE verifier found. Using active state verifier.');
             }
 
             const { getFunctions, httpsCallable } = require('firebase/functions');
@@ -140,14 +187,18 @@ export function useYahooAuth() {
                 }
 
                 // Cleanup stored verifier on success
-                await SecureStore.deleteItemAsync(SS_KEYS.verifier);
+                await deleteVerifier();
             } else {
                 throw new Error('No custom token returned.');
             }
 
         } catch (error) {
             console.error('❌ Exchange failed:', error);
-            Alert.alert('Login Error', error.message || 'Failed to exchange token.');
+            if (Platform.OS === 'web') {
+                alert('Login Error: ' + (error.message || 'Failed to exchange token.'));
+            } else {
+                Alert.alert('Login Error', error.message || 'Failed to exchange token.');
+            }
         } finally {
             setIsLoading(false);
         }
