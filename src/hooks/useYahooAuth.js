@@ -6,6 +6,7 @@ import { auth, app } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -19,13 +20,28 @@ const SS_KEYS = {
 };
 
 export function useYahooAuth() {
-    // Clean Redirect URI generation matching app.config.js
-    // Scheme: weeklyleaguepickemapp
-    // Path: yahoo (matches intent filter host)
-    const redirectUri = useMemo(() => makeRedirectUri({
-        scheme: 'weeklyleaguepickemapp',
-        path: 'yahoo'
-    }), []);
+    // Determine redirect URI depending on running in Expo Go or custom built client.
+    const redirectUri = useMemo(() => {
+        const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
+        console.log('🔍 useYahooAuth: isExpoGo:', isExpoGo);
+
+        if (isExpoGo) {
+            // Expo Go requires Expo Auth Proxy. We use the base proxy URL registered with Yahoo:
+            // https://auth.expo.io/@ryester/WeeklyLeaguePickemApp
+            return makeRedirectUri({
+                useProxy: true,
+                scheme: 'weeklyleaguepickemapp',
+            });
+        }
+
+        // Development Client / Production standalone uses the custom scheme directly:
+        // weeklyleaguepickemapp://yahoo
+        return makeRedirectUri({
+            useProxy: false,
+            scheme: 'weeklyleaguepickemapp',
+            path: 'yahoo',
+        });
+    }, []);
 
     console.log('🔗 Yahoo Redirect URI:', redirectUri);
 
@@ -49,7 +65,10 @@ export function useYahooAuth() {
                 await SecureStore.setItemAsync(SS_KEYS.verifier, request.codeVerifier);
                 console.log('💾 Saved PKCE code verifier to SecureStore:', request.codeVerifier);
             }
-            return await promptAsyncOriginal();
+            const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
+            return await promptAsyncOriginal({
+                useProxy: isExpoGo,
+            });
         } catch (e) {
             console.error("Yahoo Auth Prompt Error:", e);
             Alert.alert("Error", "Failed to start Yahoo Login.");
