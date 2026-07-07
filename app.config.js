@@ -16,8 +16,8 @@ export default {
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.ryester.WeeklyLeaguePickem-App",
-      buildNumber: "2",
+      bundleIdentifier: "com.ryester.WeeklyLeaguePickemApp",
+      buildNumber: "54",
       icon: "./assets/icon.png",
       usesAppleSignIn: true,
       infoPlist: {
