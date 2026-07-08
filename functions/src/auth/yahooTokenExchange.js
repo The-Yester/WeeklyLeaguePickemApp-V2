@@ -25,9 +25,9 @@ async function getSecret(secretName) {
  */
 exports.exchangeYahooCodeForToken = async (request) => {
   // Callable functions wrap data in `request.data`
-  const { code, code_verifier, redirect_uri, currentUid } = request.data || {};
+  const { code, code_verifier, redirect_uri, currentUid, clientType } = request.data || {};
 
-  console.log('📦 exchangeYahooCodeForToken called with:', { code, hasVerifier: !!code_verifier, redirect_uri, currentUid });
+  console.log('📦 exchangeYahooCodeForToken called with:', { code, hasVerifier: !!code_verifier, redirect_uri, currentUid, clientType });
 
   if (!code || !code_verifier || !redirect_uri) {
     throw new HttpsError('invalid-argument', 'Missing code, code_verifier, or redirect_uri');
@@ -46,7 +46,7 @@ exports.exchangeYahooCodeForToken = async (request) => {
       }
     }
 
-    const isConfidential = !!(clientSecret && clientSecret !== 'your-client-secret-here');
+    const isConfidential = clientType !== 'public' && !!(clientSecret && clientSecret !== 'your-client-secret-here');
 
     const params = new URLSearchParams();
     params.append('client_id', clientId);

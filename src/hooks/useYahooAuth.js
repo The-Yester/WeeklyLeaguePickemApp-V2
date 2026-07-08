@@ -163,7 +163,8 @@ export function useYahooAuth() {
                 code,
                 code_verifier: verifierToUse,
                 redirect_uri: redirectUri,
-                currentUid: auth.currentUser?.uid || null
+                currentUid: auth.currentUser?.uid || null,
+                clientType: 'public'
             });
 
             const data = result.data;
