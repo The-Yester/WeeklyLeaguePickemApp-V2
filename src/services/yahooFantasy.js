@@ -21,30 +21,30 @@ const getMockWeeklyMatchups = (week) => {
         [[1, 4], [2, 3], [5, 8], [6, 7]], // Week 3 / 7 / 11 / 15
         [[1, 5], [2, 6], [3, 7], [4, 8]], // Week 4 / 8 / 12 / 16
     ];
-    
+
     const pairingIndex = Math.max(0, (weekNum - 1) % pairings.length);
     const weekPairings = pairings[pairingIndex];
-    
+
     return weekPairings.map(([t1Idx, t2Idx], idx) => {
         const team1 = MOCK_TEAMS[t1Idx - 1];
         const team2 = MOCK_TEAMS[t2Idx - 1];
-        
+
         const isFinished = weekNum < 3;
         const status = isFinished ? 'postevent' : 'scheduled';
-        
+
         const seed1 = (weekNum * 7 + idx * 13) % 30;
         const seed2 = (weekNum * 11 + idx * 17) % 30;
         const proj1 = 95.0 + seed1;
         const proj2 = 92.0 + seed2;
-        
+
         const act1 = isFinished ? proj1 + ((seed1 - 15) / 2) : 0;
         const act2 = isFinished ? proj2 + ((seed2 - 15) / 2) : 0;
-        
+
         let winningTeam = null;
         if (isFinished) {
             winningTeam = act1 > act2 ? team1.name : team2.name;
         }
-        
+
         return {
             UniqueID: `yahoo_${weekNum}_${team1.key}_${team2.key}`,
             Week: weekNum,
@@ -53,7 +53,7 @@ const getMockWeeklyMatchups = (week) => {
             MatchURL: 'https://football.fantasysports.yahoo.com',
             GameDate: `Week ${weekNum}`,
             GameTimeET: isFinished ? 'Final' : 'Sunday 1:00 PM',
-            
+
             // Team 1 (Away)
             AwayTeamKey: team1.key,
             AwayTeamName: team1.name,
@@ -61,7 +61,7 @@ const getMockWeeklyMatchups = (week) => {
             AwayTeamLogo: team1.logo,
             AwayTeamProjectedPoints: Number(proj1.toFixed(1)),
             AwayTeamActualPoints: Number(act1.toFixed(1)),
-            
+
             // Team 2 (Home)
             HomeTeamKey: team2.key,
             HomeTeamName: team2.name,
@@ -69,7 +69,7 @@ const getMockWeeklyMatchups = (week) => {
             HomeTeamLogo: team2.logo,
             HomeTeamProjectedPoints: Number(proj2.toFixed(1)),
             HomeTeamActualPoints: Number(act2.toFixed(1)),
-            
+
             WinningTeam: winningTeam
         };
     });
@@ -229,7 +229,7 @@ const parseYahooMatchup = (yahooMatchup) => {
         const awayTeamId = awayTeamIdMatch ? awayTeamIdMatch[1] : null;
         const homeTeamIdMatch = team2.team_key.match(/\.t\.(\d+)/);
         const homeTeamId = homeTeamIdMatch ? homeTeamIdMatch[1] : null;
-        
+
         if (leagueId && awayTeamId && homeTeamId) {
             matchupUrl = `https://football.fantasysports.yahoo.com/f1/${leagueId}/matchup?week=${safeWeek}&mid1=${awayTeamId}&mid2=${homeTeamId}`;
         }
@@ -342,7 +342,7 @@ export const validateAndLinkLeague = async (userInputId) => {
         const path = '/users;use_login=1/games;game_codes=nfl/leagues/teams';
         console.log(`🔍 Validating League & Team ID via Proxy: ${userInputId}`);
         const data = await callYahooProxy(path);
-        
+
         console.log("🔍 RAW YAHOO RESPONSE (Validation):", JSON.stringify(data, null, 2).substring(0, 200) + "...");
 
         const userObj = data?.fantasy_content?.users?.['0'];
@@ -543,7 +543,7 @@ export const getUserProfile = async () => {
         const path = '/users;use_login=1/games;game_codes=nfl';
         console.log(`👤 Fetching User Profile via Proxy`);
         const data = await callYahooProxy(path);
-        
+
         // Return the user object (wrapper)
         return data?.fantasy_content?.users?.['0']?.user?.[0] || null;
     } catch (error) {

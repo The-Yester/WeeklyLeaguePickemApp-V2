@@ -1,5 +1,5 @@
 // app/(app)/myPicks.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -36,6 +36,9 @@ const MAX_WEEKS = 18;
 const MyPicksScreen = () => {
   const { user, leagueKey } = useAuth();
   const insets = useSafeAreaInsets();
+  
+  const lastLoadedRef = useRef({ leagueKey: null, week: null, userId: null });
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,8 +50,25 @@ const MyPicksScreen = () => {
 
   // This is the single, orchestrated function to load all data for the screen.
   const loadDataForWeek = useCallback(async (week) => {
-    if (!user) {
+    if (!user || !user.uid) {
       setError("Please log in to view your picks.");
+      setIsLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    if (!leagueKey) {
+      console.warn("MyPicks: No LeagueKey found, skipping fetch.");
+      return;
+    }
+
+    // Prevent duplicate fetches
+    if (
+      lastLoadedRef.current.leagueKey === leagueKey &&
+      lastLoadedRef.current.week === week &&
+      lastLoadedRef.current.userId === user.uid
+    ) {
+      console.log('MyPicks: Data already loaded for this week/league/user, skipping duplicate load.');
       setIsLoading(false);
       setRefreshing(false);
       return;
@@ -62,13 +82,9 @@ const MyPicksScreen = () => {
       const { getWeeklyMatchups } = require('../../src/services/yahooFantasy');
       console.log(`MyPicks: LoadDataForWeek ${week}. LeagueKey: ${leagueKey}, User: ${user?.uid}`);
 
-      if (leagueKey) {
-        matchups = await getWeeklyMatchups(week, leagueKey);
-        console.log(`MyPicks: Fetched ${matchups.length} matchups from API.`);
-        setAllMatchups(matchups);
-      } else {
-        console.warn("MyPicks: No LeagueKey found, skipping fetch.");
-      }
+      matchups = await getWeeklyMatchups(week, leagueKey);
+      console.log(`MyPicks: Fetched ${matchups.length} matchups from API.`);
+      setAllMatchups(matchups);
 
       // Step 2: Fetch user picks for the current week from Firestore
       const weekPicksDocRef = doc(db, "users", user.uid, "picks", `week_${week}`);
@@ -125,12 +141,20 @@ const MyPicksScreen = () => {
     }
   }, [user, leagueKey]); // REMOVED allMatchups to prevent infinite loop
 
+  // Handle immediate sync on initial login / state updates
+  useEffect(() => {
+    if (user && leagueKey) {
+      loadDataForWeek(currentWeek);
+    }
+  }, [currentWeek, user, leagueKey, loadDataForWeek]);
+
+  // Keep focus effect for tab switching refreshes
   useFocusEffect(
     useCallback(() => {
-      if (user !== undefined) {
+      if (user && leagueKey) {
         loadDataForWeek(currentWeek);
       }
-    }, [currentWeek, user, loadDataForWeek])
+    }, [currentWeek, user, leagueKey, loadDataForWeek])
   );
 
   const onRefresh = useCallback(() => {

@@ -1,5 +1,5 @@
 // app/(app)/frankings.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- THEME COLORS ---
 const PRIMARY_COLOR = '#0D1B2A';
@@ -38,9 +39,29 @@ export default function FrankingsScreen() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [password, setPassword] = useState('');
 
+  // Check stored unlock status on mount
+  useEffect(() => {
+    const checkUnlockStatus = async () => {
+      try {
+        const val = await AsyncStorage.getItem('frankings_unlocked');
+        if (val === 'true') {
+          setIsUnlocked(true);
+        }
+      } catch (e) {
+        console.error("Failed to read frankings lock status:", e);
+      }
+    };
+    checkUnlockStatus();
+  }, []);
+
   // Password Validation
-  const handleUnlock = () => {
+  const handleUnlock = async () => {
     if (password === 'FranktheTank') {
+      try {
+        await AsyncStorage.setItem('frankings_unlocked', 'true');
+      } catch (e) {
+        console.error("Failed to save frankings unlock status:", e);
+      }
       setIsUnlocked(true);
       // Auto-open link on first unlock
       Linking.openURL('https://frankings.blogspot.com/?view=sidebar').catch(err => {
@@ -49,6 +70,15 @@ export default function FrankingsScreen() {
     } else {
       Alert.alert("Access Denied", "Incorrect Password.");
     }
+  };
+
+  const handleRelock = async () => {
+    try {
+      await AsyncStorage.removeItem('frankings_unlocked');
+    } catch (e) {
+      console.error("Failed to remove frankings unlock status:", e);
+    }
+    setIsUnlocked(false);
   };
 
   const handleAIOverview = () => {
@@ -128,7 +158,7 @@ export default function FrankingsScreen() {
 
           <TouchableOpacity
             style={{ marginTop: 30 }}
-            onPress={() => setIsUnlocked(false)} // Relock option
+            onPress={handleRelock} // Relock option
           >
             <Text style={{ color: TEXT_COLOR_SUB, textDecorationLine: 'underline' }}>Relock Vault</Text>
           </TouchableOpacity>

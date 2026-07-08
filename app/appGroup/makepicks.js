@@ -1,5 +1,5 @@
 // app/(app)/home/makepicks.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -141,6 +141,8 @@ const MakePicksScreen = ({ route }) => {
 
   const initialWeek = params.week ? parseInt(params.week, 10) : 1;
 
+  const lastLoadedRef = useRef({ leagueKey: null, week: null, userId: null });
+
   const [currentWeek, setCurrentWeek] = useState(initialWeek);
   const [currentWeekMatchups, setCurrentWeekMatchups] = useState([]);
   const [standingsMap, setStandingsMap] = useState({}); // [NEW] Map team_key -> standing stats
@@ -266,15 +268,26 @@ const MakePicksScreen = ({ route }) => {
       return;
     }
 
+    if (!leagueKey) {
+      console.log('MakePicks: No leagueKey, waiting...');
+      return;
+    }
+
+    // Prevent duplicate fetches
+    if (
+      lastLoadedRef.current.leagueKey === leagueKey &&
+      lastLoadedRef.current.week === week &&
+      lastLoadedRef.current.userId === loggedInUser.uid
+    ) {
+      console.log('MakePicks: Data already loaded for this week/league/user, skipping duplicate load.');
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     checkLockStatus(week);
     try {
-      if (!leagueKey) {
-        console.log('MakePicks: No leagueKey, waiting...');
-        return;
-      }
-
       const matchups = await fetchYahooMatchupsForWeek(leagueKey, week);
       setCurrentWeekMatchups(matchups);
 
@@ -301,6 +314,9 @@ const MakePicksScreen = ({ route }) => {
       const dist = await calculatePickDistribution(week, matchups);
       setPickDistribution(dist);
 
+      // Update ref on success
+      lastLoadedRef.current = { leagueKey, week, userId: loggedInUser.uid };
+
     } catch (e) {
       console.error("MakePicksScreen: Failed to load data:", e);
       setError("Could not load matchups or your picks.");
@@ -309,12 +325,20 @@ const MakePicksScreen = ({ route }) => {
     }
   }, [loggedInUser, leagueKey, fetchYahooMatchupsForWeek, calculatePickDistribution]);
 
+  // Handle immediate sync on initial login / state updates
+  useEffect(() => {
+    if (loggedInUser && leagueKey) {
+      loadDataForWeek(currentWeek);
+    }
+  }, [currentWeek, loggedInUser, leagueKey, loadDataForWeek]);
+
+  // Keep focus effect for tab switching refreshes
   useFocusEffect(
     useCallback(() => {
-      if (loggedInUser !== undefined) {
+      if (loggedInUser && leagueKey) {
         loadDataForWeek(currentWeek);
       }
-    }, [currentWeek, loggedInUser, loadDataForWeek])
+    }, [currentWeek, loggedInUser, leagueKey, loadDataForWeek])
   );
 
   const handlePickSelection = (gameUniqueID, pickedTeamAbbr) => {

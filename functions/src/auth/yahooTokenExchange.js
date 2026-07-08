@@ -76,7 +76,7 @@ exports.exchangeYahooCodeForToken = async (request) => {
     let tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
       method: 'POST',
       headers,
-      body: params,
+      body: params.toString(),
     });
 
     if (!tokenResponse.ok) {
@@ -92,7 +92,7 @@ exports.exchangeYahooCodeForToken = async (request) => {
         tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
           method: 'POST',
           headers: retryHeaders,
-          body: params,
+          body: params.toString(),
         });
 
         if (!tokenResponse.ok) {
