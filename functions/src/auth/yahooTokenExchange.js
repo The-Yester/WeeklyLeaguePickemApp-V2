@@ -46,7 +46,8 @@ exports.exchangeYahooCodeForToken = async (request) => {
       }
     }
 
-    const isConfidential = clientType !== 'public' && !!(clientSecret && clientSecret !== 'your-client-secret-here');
+    const isRedirectHttp = redirect_uri && redirect_uri.startsWith('https://');
+    const isConfidential = clientType !== 'public' && isRedirectHttp && !!(clientSecret && clientSecret !== 'your-client-secret-here');
 
     const params = new URLSearchParams();
     params.append('client_id', clientId);
@@ -54,6 +55,11 @@ exports.exchangeYahooCodeForToken = async (request) => {
     params.append('code_verifier', code_verifier);
     params.append('redirect_uri', redirect_uri);
     params.append('grant_type', 'authorization_code');
+
+    const firstParams = new URLSearchParams(params);
+    if (isConfidential) {
+      firstParams.append('client_secret', clientSecret);
+    }
 
     console.log(`📤 Sending token request to Yahoo (${isConfidential ? 'Confidential' : 'Public'} Client)...`);
     console.log('🔍 DEBUG PARAMS:', {
@@ -68,15 +74,10 @@ exports.exchangeYahooCodeForToken = async (request) => {
       'Content-Type': 'application/x-www-form-urlencoded'
     };
 
-    if (isConfidential) {
-      const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      headers['Authorization'] = `Basic ${basic}`;
-    }
-
     let tokenResponse = await fetch('https://api.login.yahoo.com/oauth2/get_token', {
       method: 'POST',
       headers,
-      body: params.toString(),
+      body: firstParams.toString(),
     });
 
     if (!tokenResponse.ok) {

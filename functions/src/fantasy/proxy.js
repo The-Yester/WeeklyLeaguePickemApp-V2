@@ -68,22 +68,21 @@ async function ensureAccessToken(uid) {
     refresh_token: tokens.refresh_token,
   });
 
+  const firstBody = new URLSearchParams(body);
+  const isConfidential = clientSecret && clientSecret !== 'your-client-secret-here';
+  if (isConfidential) {
+    firstBody.append('client_secret', clientSecret);
+  }
+
   const headers = {
     'Content-Type': 'application/x-www-form-urlencoded',
   };
-
-  // If we have a confidential client secret, authenticate using Basic auth
-  const isConfidential = clientSecret && clientSecret !== 'your-client-secret-here';
-  if (isConfidential) {
-    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    headers['Authorization'] = `Basic ${basic}`;
-  }
 
   console.log(`🔄 Refreshing Yahoo token via proxy (${isConfidential ? 'Confidential' : 'Public'} client)...`);
   const res = await fetch(YAHOO_TOKEN_ENDPOINT, {
     method: 'POST',
     headers,
-    body,
+    body: firstBody,
   });
 
   if (!res.ok) {
@@ -91,7 +90,7 @@ async function ensureAccessToken(uid) {
     console.error(`❌ Yahoo token refresh failed: ${res.status}`, text);
 
     // If Yahoo complains that a client secret is not required (e.g. for "Installed Application" client type),
-    // retry the request without the Basic Auth header.
+    // retry the request without the client secret.
     if (isConfidential && text.includes('client secret not required')) {
       console.log('🔄 Retrying Yahoo token refresh without client secret (as requested by Yahoo)...');
       const retryHeaders = {

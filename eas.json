@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "YAHOO_CLIENT_ID": "dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw",
+        "YAHOO_CLIENT_ID": "dj0yJmk9ZUJDMkJNYXJrOUt3JmQ9WVdrOU0yWmlOMGR3ZGtjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PWI5",
         "YAHOO_CLIENT_SECRET": "c34077908c4d52310342b18fe5d6b4f676cafc37",
         "NPM_FLAGS": "--legacy-peer-deps",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo",
@@ -35,7 +35,7 @@
         "buildType": "apk"
       },
       "env": {
-        "YAHOO_CLIENT_ID": "dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw",
+        "YAHOO_CLIENT_ID": "dj0yJmk9ZUJDMkJNYXJrOUt3JmQ9WVdrOU0yWmlOMGR3ZGtjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PWI5",
         "YAHOO_CLIENT_SECRET": "c34077908c4d52310342b18fe5d6b4f676cafc37",
         "NPM_FLAGS": "--legacy-peer-deps",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo",
@@ -53,7 +53,7 @@
     },
     "production": {
       "env": {
-        "YAHOO_CLIENT_ID": "dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw",
+        "YAHOO_CLIENT_ID": "dj0yJmk9ZUJDMkJNYXJrOUt3JmQ9WVdrOU0yWmlOMGR3ZGtjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PWI5",
         "YAHOO_CLIENT_SECRET": "c34077908c4d52310342b18fe5d6b4f676cafc37",
         "NPM_FLAGS": "--legacy-peer-deps",
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBsgpZtsLtPA7uSEmfPWq0b49qU7wHjZFo",

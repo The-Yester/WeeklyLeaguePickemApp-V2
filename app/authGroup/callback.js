@@ -1,11 +1,12 @@
 // app/authGroup/callback.js
 import React, { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, Text, Linking } from 'react-native';
+import { View, ActivityIndicator, Text, Linking, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter, usePathname } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AuthSession from 'expo-auth-session';
 import { httpsCallable } from 'firebase/functions';
-import { OAuthProvider, signInWithCredential, signInWithCustomToken } from 'firebase/auth';
+import { signInWithCustomToken } from 'firebase/auth';
 
 import { auth, functions, db } from '../../src/config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -20,6 +21,32 @@ const SS_KEYS = {
     session: 'yahoo_session', // where we’ll store the resulting tokens/session
 };
 
+// Safe storage wrappers for Web (AsyncStorage) and Native (SecureStore)
+const getStoredValue = async (key) => {
+    try {
+        if (Platform.OS === 'web') {
+            return await AsyncStorage.getItem(key);
+        } else {
+            return await SecureStore.getItemAsync(key);
+        }
+    } catch (e) {
+        console.error(`Failed to get stored key ${key}:`, e);
+        return null;
+    }
+};
+
+const deleteStoredValue = async (key) => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.removeItem(key);
+        } else {
+            await SecureStore.deleteItemAsync(key);
+        }
+    } catch (e) {
+        console.error(`Failed to delete stored key ${key}:`, e);
+    }
+};
+
 export default function YahooCallback() {
     console.log("✅ YahooCallback screen mounted");
     const router = useRouter();
@@ -27,7 +54,7 @@ export default function YahooCallback() {
     const [message, setMessage] = useState('Finishing sign-in…');
     const didRun = useRef(false);
     const pathname = usePathname();
-    const { setAccessToken, setRefreshToken, signIn } = useAuth();
+    const { setAccessToken, setRefreshToken } = useAuth();
 
     console.log('🔁 YahooCallback: Received search params:', params);
     console.log('📍 Current route pathname:', pathname);
@@ -76,19 +103,19 @@ export default function YahooCallback() {
 
         // 3) CSRF/state check
         console.log('🔑 Parsed code and state:', { authCode, returnedState });
-        const storedState = await SecureStore.getItemAsync(SS_KEYS.state);
+        const storedState = await getStoredValue(SS_KEYS.state);
         if (!storedState || storedState !== returnedState) {
             throw new Error('State mismatch. Please restart sign-in.');
         }
 
         // 4) Load PKCE verifier + redirect URI used during the request
-        const codeVerifier = await SecureStore.getItemAsync(SS_KEYS.verifier);
+        const codeVerifier = await getStoredValue(SS_KEYS.verifier);
         if (!codeVerifier) {
             throw new Error('Missing PKCE verifier. Please restart sign-in.');
         }
 
         // Prefer the exact redirect used at login (stored), else recompute
-        const storedRedirect = await SecureStore.getItemAsync(SS_KEYS.redirectUri);
+        const storedRedirect = await getStoredValue(SS_KEYS.redirectUri);
         const redirectUri =
             storedRedirect ||
             getRedirectUri(true) || // default to proxy during development
@@ -103,7 +130,7 @@ export default function YahooCallback() {
             code: authCode,
             code_verifier: codeVerifier,
             redirect_uri: redirectUri,
-            currentUid: auth.currentUser?.uid || null
+            currentUid: auth.currentUser?.uid || null,
         });
 
         console.log('🔑 Token exchange response:', data);
@@ -153,14 +180,17 @@ export default function YahooCallback() {
         setAccessToken(tokenData.yahoo_access_token);
         if (tokenData.yahoo_refresh_token) setRefreshToken(tokenData.yahoo_refresh_token);
 
-        await SecureStore.setItemAsync(SS_KEYS.session, JSON.stringify(data));
+        if (Platform.OS !== 'web') {
+            await SecureStore.setItemAsync(SS_KEYS.session, JSON.stringify(data));
+        } else {
+            await AsyncStorage.setItem(SS_KEYS.session, JSON.stringify(data));
+        }
 
         // 7) Cleanup ephemeral values
         await Promise.all([
-            SecureStore.deleteItemAsync(SS_KEYS.state),
-            SecureStore.deleteItemAsync(SS_KEYS.verifier),
-            // keep redirectUri if you want to re-use it, or clear it:
-            // SecureStore.deleteItemAsync(SS_KEYS.redirectUri),
+            deleteStoredValue(SS_KEYS.state),
+            deleteStoredValue(SS_KEYS.verifier),
+            deleteStoredValue(SS_KEYS.redirectUri),
         ]);
 
         setMessage('Signed in. Redirecting…');

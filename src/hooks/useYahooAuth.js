@@ -18,6 +18,56 @@ const discovery = {
 
 const SS_KEYS = {
     verifier: 'yahoo_pkce_verifier',
+    state: 'yahoo_oauth_state',
+    redirectUri: 'yahoo_redirect_uri',
+};
+
+const saveState = async (state) => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.setItem(SS_KEYS.state, state);
+        } else {
+            await SecureStore.setItemAsync(SS_KEYS.state, state);
+        }
+    } catch (e) {
+        console.error('Failed to save state:', e);
+    }
+};
+
+const deleteState = async () => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.removeItem(SS_KEYS.state);
+        } else {
+            await SecureStore.deleteItemAsync(SS_KEYS.state);
+        }
+    } catch (e) {
+        console.error('Failed to delete state:', e);
+    }
+};
+
+const saveRedirectUri = async (uri) => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.setItem(SS_KEYS.redirectUri, uri);
+        } else {
+            await SecureStore.setItemAsync(SS_KEYS.redirectUri, uri);
+        }
+    } catch (e) {
+        console.error('Failed to save redirect URI:', e);
+    }
+};
+
+const deleteRedirectUri = async () => {
+    try {
+        if (Platform.OS === 'web') {
+            await AsyncStorage.removeItem(SS_KEYS.redirectUri);
+        } else {
+            await SecureStore.deleteItemAsync(SS_KEYS.redirectUri);
+        }
+    } catch (e) {
+        console.error('Failed to delete redirect URI:', e);
+    }
 };
 
 // Safe storage wrappers to handle Web (AsyncStorage) and Native (SecureStore)
@@ -85,7 +135,7 @@ export function useYahooAuth() {
     console.log('🔗 Yahoo Redirect URI:', redirectUri);
 
     const config = useMemo(() => ({
-        clientId: 'dj0yJmk9dDhqVXlhU2hxbzRNJmQ9WVdrOU1qUXlORTgyYzJNbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PTIw',
+        clientId: 'dj0yJmk9ZUJDMkJNYXJrOUt3JmQ9WVdrOU0yWmlOMGR3ZGtjbWNHbzlNQT09JnM9Y29uc3VtZXJzZWNyZXQmc3Y9MCZ4PWI5',
         redirectUri,
         scopes: ['openid', 'profile', 'email', 'fspt-r'],
         responseType: 'code',
@@ -103,6 +153,14 @@ export function useYahooAuth() {
             if (request?.codeVerifier) {
                 await saveVerifier(request.codeVerifier);
                 console.log('💾 Saved PKCE code verifier:', request.codeVerifier);
+            }
+            if (request?.state) {
+                await saveState(request.state);
+                console.log('💾 Saved OAuth state:', request.state);
+            }
+            if (redirectUri) {
+                await saveRedirectUri(redirectUri);
+                console.log('💾 Saved redirect URI:', redirectUri);
             }
             const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
             return await promptAsyncOriginal({
@@ -164,7 +222,6 @@ export function useYahooAuth() {
                 code_verifier: verifierToUse,
                 redirect_uri: redirectUri,
                 currentUid: auth.currentUser?.uid || null,
-                clientType: 'public'
             });
 
             const data = result.data;
@@ -187,8 +244,12 @@ export function useYahooAuth() {
                     );
                 }
 
-                // Cleanup stored verifier on success
-                await deleteVerifier();
+                // Cleanup stored verifier, state, and redirect URI on success
+                await Promise.all([
+                    deleteVerifier(),
+                    deleteState(),
+                    deleteRedirectUri()
+                ]);
             } else {
                 throw new Error('No custom token returned.');
             }
